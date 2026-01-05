@@ -1,0 +1,111 @@
+# Unity/C# Project Files
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]in/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+*.csproj
+*.sln.DotSettings
+*.sln.DotSettings.user
+
+# Visual Studio Cache/Options
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.iml
+*.userprefs
+
+# BepInEx Plugin Output
+bin/
+plugins/
+patchers/
+
+# Build Results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]64/
+bld/
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.pdb
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*.log
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+*.svclog
+*.scc
+
+# BepInEx/Valheim Specific
+BepInEx/
+doorstop_config.ini
+winhttp.dll
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# Rider
+.idea/
+*.sln.iml
+riderModule.iml
+
+# MacOS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+*.lnk
+
+# IDE
+*.swp
+*.swo
+*~
+.editorconfig
+
+# Game Specific
+ValheimModStub/bin/
+ValheimModStub/obj/
+
+# Misc
+.gradle
+.gradle/
+.env
+.env.local
+secrets/
+*.key
+*.pem
+
+
+.claude
+.opencode
+plans
+.repomixignore
+CLAUDE.MD
+instruction.txt
