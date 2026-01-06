@@ -71,6 +71,29 @@ namespace ItemConduit.Components
             if (wearNTear != null)
                 Object.DestroyImmediate(wearNTear);
 
+            // Ensure BoxCollider exists for OBB collision detection
+            var boxCollider = prefab.GetComponent<BoxCollider>();
+            if (boxCollider == null)
+            {
+                boxCollider = prefab.AddComponent<BoxCollider>();
+                // Calculate bounds from mesh
+                var meshFilter = prefab.GetComponentInChildren<MeshFilter>();
+                if (meshFilter != null && meshFilter.sharedMesh != null)
+                {
+                    var mesh = meshFilter.sharedMesh;
+                    boxCollider.center = mesh.bounds.center;
+                    boxCollider.size = mesh.bounds.size;
+                    Jotunn.Logger.LogDebug($"[ConduitPrefabs] Added BoxCollider to {conduitName}: center={boxCollider.center}, size={boxCollider.size}");
+                }
+                else
+                {
+                    // Fallback: default beam size (4m x 0.2m x 0.2m in local space)
+                    boxCollider.center = Vector3.zero;
+                    boxCollider.size = new Vector3(4f, 0.2f, 0.2f);
+                    Jotunn.Logger.LogWarning($"[ConduitPrefabs] No mesh found for {conduitName}, using default BoxCollider size");
+                }
+            }
+
             // Add Conduit component
             prefab.AddComponent<Conduit>();
 

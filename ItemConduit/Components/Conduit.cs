@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using ItemConduit.Collision;
 using ItemConduit.Core;
 using ItemConduit.Utils;
 using UnityEngine;
@@ -102,20 +103,55 @@ namespace ItemConduit.Components
         {
             if (!m_nview.IsValid()) return;
 
-            // Server-side only: Register with network manager
-            // NetworkID is left empty on client - server assigns it during registration
+            // Server-side only: Initialize bounds and register with network
             if (ZNet.instance.IsServer())
             {
-                // Empty NetworkID indicates new placement - server will assign
+                var zdo = m_nview.GetZDO();
                 bool isNewPlacement = string.IsNullOrEmpty(NetworkID);
 
+                // Calculate and store OBB bounds for new placements
+                if (isNewPlacement)
+                {
+                    var bounds = GetConduitBounds();
+                    if (bounds.HasValue)
+                    {
+                        zdo.Set(ZDOFields.IC_Bound, bounds.Value.Serialize());
+                        NetworkBuilder.OnConduitPlaced(zdo);
+                    }
+                }
+
                 ConduitNetworkManager.Instance.RegisterConduit(
-                    m_nview.GetZDO().m_uid,
+                    zdo.m_uid,
                     Mode,
                     Connections,
                     isNewPlacement
                 );
             }
+        }
+
+        private OrientedBoundingBox? GetConduitBounds()
+        {
+            var collider = GetComponent<BoxCollider>();
+            if (collider == null)
+            {
+                Jotunn.Logger.LogWarning($"[Conduit] No BoxCollider found on {gameObject.name}");
+                return null;
+            }
+
+            var scaledSize = Vector3.Scale(collider.size, transform.localScale);
+            var halfExtents = scaledSize / 2f;
+            var center = transform.position + transform.rotation * Vector3.Scale(collider.center, transform.localScale);
+
+            // DEBUG: Remove after testing
+            Jotunn.Logger.LogDebug($"[OBB Debug] collider.size: {collider.size}");
+            Jotunn.Logger.LogDebug($"[OBB Debug] collider.center: {collider.center}");
+            Jotunn.Logger.LogDebug($"[OBB Debug] transform.localScale: {transform.localScale}");
+            Jotunn.Logger.LogDebug($"[OBB Debug] transform.position: {transform.position}");
+            Jotunn.Logger.LogDebug($"[OBB Debug] collider.bounds.center (Unity): {collider.bounds.center}");
+            Jotunn.Logger.LogDebug($"[OBB Debug] calculated center: {center}");
+            Jotunn.Logger.LogDebug($"[OBB Debug] scaledSize: {scaledSize}, halfExtents: {halfExtents}");
+
+            return new OrientedBoundingBox(center, transform.rotation, halfExtents);
         }
 
         private void OnDestroy()
@@ -124,9 +160,8 @@ namespace ItemConduit.Components
 
             if (ZNet.instance?.IsServer() == true)
             {
-                ConduitNetworkManager.Instance.UnregisterConduit(
-                    m_nview.GetZDO().m_uid
-                );
+                // Full cleanup: unregister + clean neighbor connection lists
+                NetworkBuilder.OnConduitRemoved(m_nview.GetZDO().m_uid);
             }
         }
 
@@ -197,6 +232,33 @@ namespace ItemConduit.Components
             var filter = FilterList;
             if (string.IsNullOrEmpty(filter)) return 0;
             return filter.Split(',').Length;
+        }
+
+        #endregion
+
+        #region DEBUG: Remove after testing
+
+        private void OnDrawGizmos()
+        {
+            var collider = GetComponent<BoxCollider>();
+            if (collider == null) return;
+
+            var scaledSize = Vector3.Scale(collider.size, transform.localScale);
+            var center = transform.position + transform.rotation * Vector3.Scale(collider.center, transform.localScale);
+
+            // Draw OBB wireframe (green)
+            Gizmos.color = Color.green;
+            Gizmos.matrix = Matrix4x4.TRS(center, transform.rotation, Vector3.one);
+            Gizmos.DrawWireCube(Vector3.zero, scaledSize);
+
+            // Draw center point (red sphere)
+            Gizmos.color = Color.red;
+            Gizmos.matrix = Matrix4x4.identity;
+            Gizmos.DrawSphere(center, 0.05f);
+
+            // Draw Unity's bounds.center for comparison (blue sphere)
+            Gizmos.color = Color.blue;
+            Gizmos.DrawSphere(collider.bounds.center, 0.03f);
         }
 
         #endregion
