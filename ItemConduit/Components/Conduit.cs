@@ -89,11 +89,13 @@ namespace ItemConduit.Components
         private void Awake()
         {
             m_nview = GetComponent<ZNetView>();
-            if (m_nview == null)
+            if (m_nview == null || !m_nview.IsValid())
             {
-                Jotunn.Logger.LogError("Conduit missing ZNetView");
+                Jotunn.Logger.LogDebug("Conduit missing ZNetView. Possible Ghost Conduit");
                 return;
             }
+
+            Jotunn.Logger.LogDebug($"Conduit awaked: {m_nview.GetZDO().m_uid.ToString()}");
         }
 
         private void Start()

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Jotunn.Configs;
 using Jotunn.Entities;
 using Jotunn.Managers;
@@ -9,10 +10,16 @@ namespace ItemConduit.Components
     {
         private static readonly string[] BasePrefabs = {
             "wood_beam_1",     // 1m horizontal beam
-            "wood_beam",     // 2m horizontal beam
-            "wood_pole",      // 1m vertical pole
-            "wood_pole2"      // 2m vertical pole
+            "wood_beam",       // 2m horizontal beam
+            "wood_pole",       // 1m vertical pole
+            "wood_pole2"       // 2m vertical pole
         };
+
+        /// <summary>
+        /// HashSet of all conduit prefab hashes for fast lookup.
+        /// Populated during prefab registration.
+        /// </summary>
+        public static readonly HashSet<int> ConduitPrefabHashes = new();
 
         public static void RegisterPrefabs()
         {
@@ -31,7 +38,7 @@ namespace ItemConduit.Components
 
         private static void CreateConduitFromPrefab(string prefabName)
         {
-            var conduitName = $"ic_{prefabName}";
+            var conduitName = GetICPrefabName(prefabName);
 
             // Clone the prefab
             var basePrefab = PrefabManager.Instance.GetPrefab(prefabName);
@@ -70,6 +77,9 @@ namespace ItemConduit.Components
             // Register piece
             PieceManager.Instance.AddPiece(customPiece);
 
+            // Store prefab hash for ZDO filtering
+            ConduitPrefabHashes.Add(conduitName.GetStableHashCode());
+
             Jotunn.Logger.LogInfo($"Registered conduit: {conduitName}");
         }
 
@@ -82,6 +92,18 @@ namespace ItemConduit.Components
                 "wood_pole" => "Conduit Pole 1m",
                 "wood_pole2" => "Conduit Pole 2m",
                 _ => "Conduit"
+            };
+        }
+
+        private static string GetICPrefabName(string prefabName)
+        {
+            return prefabName switch
+            {
+                "wood_beam_1" => "IC_conduit_beam_1m",
+                "wood_beam" => "IC_conduit_beam_2m",
+                "wood_pole" => "IC_conduit_pole_1m",
+                "wood_pole2" => "IC_conduit_pole_2m",
+                _ => "IC"
             };
         }
     }
