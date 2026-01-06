@@ -17,7 +17,15 @@ namespace ItemConduit.Components
         public ConduitMode Mode
         {
             get => (ConduitMode)m_nview.GetZDO().GetInt(ZDOFields.IC_Mode, 0);
-            set => m_nview.GetZDO().Set(ZDOFields.IC_Mode, (int)value);
+            set
+            {
+                m_nview.GetZDO().Set(ZDOFields.IC_Mode, (int)value);
+                // Queue for local processing on host/singleplayer
+                if (ZNet.instance?.IsServer() == true)
+                {
+                    ConduitProcessor.QueueConduit(m_nview.GetZDO().m_uid);
+                }
+            }
         }
 
         public ZDOID ContainerZDOID
@@ -108,13 +116,22 @@ namespace ItemConduit.Components
             ICGUIManager.Instance?.RegisterConduit(this);
 
             var zdo = m_nview.GetZDO();
+
+            //Set Init Flag for server
+            zdo.Set(ZDOFields.IC_IsNew, true);
+
+            //Set OBB bound
             var bounds = GetConduitBounds();
             if (bounds.HasValue)
             {
                 zdo.Set(ZDOFields.IC_Bound, bounds.Value.Serialize());
             }
-            
 
+            // Queue for processing on host/singleplayer (new placement or world load)
+            if (ZNet.instance?.IsServer() == true)
+            {
+                ConduitProcessor.QueueConduit(zdo.m_uid);
+            }
         }
 
 
@@ -143,11 +160,6 @@ namespace ItemConduit.Components
 
             if (m_nview == null || !m_nview.IsValid()) return;
 
-            if (ZNet.instance?.IsServer() == true)
-            {
-                // Full cleanup: unregister + clean neighbor connection lists
-                NetworkBuilder.OnConduitRemoved(m_nview.GetZDO().m_uid);
-            }
         }
 
         /// <summary>
@@ -171,6 +183,8 @@ namespace ItemConduit.Components
 
         public string GetHoverText()
         {
+            if (m_nview == null || !m_nview.IsValid()) return "";
+
             var sb = new StringBuilder();
             sb.AppendLine("<color=yellow><b>Conduit</b></color>");
             sb.AppendLine();

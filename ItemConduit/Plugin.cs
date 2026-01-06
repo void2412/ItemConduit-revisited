@@ -3,6 +3,7 @@ using HarmonyLib;
 using ItemConduit.Commands;
 using ItemConduit.Components;
 using ItemConduit.Config;
+using ItemConduit.Core;
 using ItemConduit.Transfer;
 using Jotunn.Utils;
 
@@ -46,6 +47,9 @@ namespace ItemConduit
 
         private void Update()
         {
+            // Process queued conduits (server-side)
+            ConduitProcessor.ProcessQueue();
+
             TransferManager.Instance.Update();
         }
 

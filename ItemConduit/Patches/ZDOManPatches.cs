@@ -1,10 +1,7 @@
 using System.Collections.Generic;
-using System.Numerics;
 using HarmonyLib;
 using ItemConduit.Components;
 using ItemConduit.Core;
-using ItemConduit.Utils;
-using ItemConduit.Collision;
 using BepInEx;
 
 namespace ItemConduit.Patches
@@ -26,7 +23,7 @@ namespace ItemConduit.Patches
         [HarmonyPrefix]
         public static void Prefix(ZDOMan __instance, ZRpc rpc, ZPackage pkg)
         {
-            _conduitZDOIDs.Clear();
+            
 
             if (pkg == null || pkg.Size() == 0) return;
 
@@ -38,8 +35,10 @@ namespace ItemConduit.Patches
         [HarmonyPostfix]
         public static void Postfix(ZDOMan __instance, ZRpc rpc, ZPackage pkg)
         {
+            if (pkg == null || pkg.Size() == 0) return;
             try
             {
+                _conduitZDOIDs.Clear();
                 pkg.SetPos(originalPos);
                 int num2 = pkg.ReadInt();
                 for (int i = 0; i < num2; i++)
@@ -70,26 +69,18 @@ namespace ItemConduit.Patches
                     }
                 }
 
-
-                if (_conduitZDOIDs.Count > 0)
+                // Queue conduits for server-side processing
+                if (_conduitZDOIDs.Count > 0 && ZNet.instance.IsServer())
                 {
-                    Jotunn.Logger.LogDebug($"[ZDOManPatches] Prefix complete: {_conduitZDOIDs.Count} conduits found");
+                    Jotunn.Logger.LogDebug($"[ZDOManPatches] Queueing {_conduitZDOIDs.Count} conduits for processing");
                     foreach (ZDOID id in _conduitZDOIDs)
                     {
-                        Jotunn.Logger.LogDebug($"Received ZDOID: {id}");
-
-                        
-                        if (ZNet.instance.IsServer())
+                        if (__instance.m_deadZDOs.ContainsKey(id))
                         {
-                            // Process Conduit node here.
-                            ZDO conduitZDO = __instance.GetZDO(id);
-                            conduitZDO.Set(ZDOFields.IC_NetworkID, "12345678");
-                            Jotunn.Logger.LogDebug($"Network ID editted on server");
-                            var obb = conduitZDO.GetString(ZDOFields.IC_Bound, "");
-
-                            if (!obb.IsNullOrWhiteSpace()) Jotunn.Logger.LogDebug($"OBB: {obb}");
+                            Jotunn.Logger.LogDebug($"[ZDOManPatches] ZDO already removed");
+                            continue;
                         }
-
+                        ConduitProcessor.QueueConduit(id);
                     }
                 }
             }
@@ -100,6 +91,29 @@ namespace ItemConduit.Patches
             }
             finally
             {
+            }
+        }
+    }
+
+    /// <summary>
+    /// Patch HandleDestroyedZDO to detect conduit removal on dedicated server.
+    /// ZDO still exists in prefix, so we can check prefab hash.
+    /// </summary>
+    [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.HandleDestroyedZDO))]
+    public static class HandleDestroyedZDOPatch
+    {
+        [HarmonyPrefix]
+        public static void Prefix(ZDOMan __instance, ZDOID uid)
+        {
+            if (!ZNet.instance?.IsServer() ?? true) return;
+
+            var zdo = __instance.GetZDO(uid);
+            if (zdo == null) return;
+
+            if (ConduitPrefabs.ConduitPrefabHashes.Contains(zdo.GetPrefab()))
+            {
+                Jotunn.Logger.LogDebug($"[HandleDestroyedZDO] Conduit {uid} destroyed, queueing removal");
+                ConduitProcessor.QueueConduitRemoval(uid);
             }
         }
     }
