@@ -20,8 +20,8 @@ namespace ItemConduit.Components
 
         public ZDOID ContainerZDOID
         {
-            get => m_nview.GetZDO().GetZDOID(ZDOFields.IC_ContainerZDOID_Key);
-            set => m_nview.GetZDO().Set(ZDOFields.IC_ContainerZDOID_Key, value);
+            get => m_nview.GetZDO().GetZDOID(ZDOFields.IC_ContainerZDOID);
+            set => m_nview.GetZDO().Set(ZDOFields.IC_ContainerZDOID, value);
         }
 
         public List<ZDOID> Connections

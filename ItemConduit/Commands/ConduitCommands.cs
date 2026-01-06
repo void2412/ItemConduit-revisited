@@ -203,7 +203,7 @@ namespace ItemConduit.Commands
                 Console.instance.Print($"Position: {nearest.GetPosition()}");
                 Console.instance.Print($"Mode: {(ConduitMode)nearest.GetInt(ZDOFields.IC_Mode, 0)}");
                 Console.instance.Print($"NetworkID: {nearest.GetString(ZDOFields.IC_NetworkID, "N/A")}");
-                Console.instance.Print($"Container: {nearest.GetZDOID(ZDOFields.IC_ContainerZDOID_Key)}");
+                Console.instance.Print($"Container: {nearest.GetZDOID(ZDOFields.IC_ContainerZDOID)}");
                 Console.instance.Print($"Connections: {NetworkBuilder.GetConnectionList(nearest).Count}");
                 Console.instance.Print($"Channel: {nearest.GetInt(ZDOFields.IC_Channel, 0)}");
                 Console.instance.Print($"Priority: {nearest.GetInt(ZDOFields.IC_Priority, 0)}");

@@ -44,6 +44,8 @@ namespace ItemConduit.Patches
 
             // Determine size based on prefab name
             var prefabName = Utils.Utils.GetPrefabName(piece.gameObject);
+            var bounds = piece.GetComponent<BoxCollider>().bounds;
+            var size = bounds.size;
             Vector3 halfExtents;
 
             if (prefabName.Contains("beam1"))

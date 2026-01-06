@@ -3,7 +3,7 @@ namespace ItemConduit.Utils
     public static class ZDOFields
     {
         // String keys for ZDOID operations (uses string API)
-        public const string IC_ContainerZDOID_Key = "IC_ContainerZDOID";
+        public const string IC_ContainerZDOID = "IC_ContainerZDOID";
 
         // Hash codes for primitive operations (uses int API)
         public static readonly int IC_Mode = "IC_Mode".GetStableHashCode();

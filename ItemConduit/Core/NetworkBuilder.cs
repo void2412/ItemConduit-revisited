@@ -73,12 +73,12 @@ namespace ItemConduit.Core
             var container = ConduitSpatialQuery.FindConnectedContainer(bounds, zdoid);
             if (container.HasValue)
             {
-                zdo.Set(ZDOFields.IC_ContainerZDOID_Key, container.Value);
+                zdo.Set(ZDOFields.IC_ContainerZDOID, container.Value);
                 Jotunn.Logger.LogInfo($"Conduit {zdoid} linked to container {container.Value}");
             }
             else
             {
-                zdo.Set(ZDOFields.IC_ContainerZDOID_Key, ZDOID.None);
+                zdo.Set(ZDOFields.IC_ContainerZDOID, ZDOID.None);
             }
         }
 
