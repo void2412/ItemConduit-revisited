@@ -44,7 +44,7 @@ namespace ItemConduit
 
             // Initialize GUI Manager
             var guiManager = new GameObject("ConduitGUIManager");
-            guiManager.AddComponent<ConduitGUIManager>();
+            guiManager.AddComponent<ICGUIManager>();
             DontDestroyOnLoad(guiManager);
 
             Logger.LogInfo($"{PluginName} v{PluginVersion} loaded");

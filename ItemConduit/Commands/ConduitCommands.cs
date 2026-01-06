@@ -110,15 +110,15 @@ namespace ItemConduit.Commands
             {
                 if (args.Length < 1)
                 {
-                    var current = ConduitGUIManager.Instance.IsWireframeEnabled();
-                    ConduitGUIManager.Instance.SetWireframeEnabled(!current);
+                    var current = ICGUIManager.Instance.IsWireframeEnabled();
+                    ICGUIManager.Instance.SetWireframeEnabled(!current);
                     Console.instance.Print($"Wireframe: {(!current ? "ON" : "OFF")}");
                     return;
                 }
 
                 var state = args[0].ToLower();
                 bool enable = state == "on" || state == "true" || state == "1";
-                ConduitGUIManager.Instance.SetWireframeEnabled(enable);
+                ICGUIManager.Instance.SetWireframeEnabled(enable);
                 Console.instance.Print($"Wireframe: {(enable ? "ON" : "OFF")}");
             }
         }
