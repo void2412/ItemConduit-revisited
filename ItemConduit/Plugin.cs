@@ -3,11 +3,8 @@ using HarmonyLib;
 using ItemConduit.Commands;
 using ItemConduit.Components;
 using ItemConduit.Config;
-using ItemConduit.Core;
-using ItemConduit.GUI;
 using ItemConduit.Transfer;
 using Jotunn.Utils;
-using UnityEngine;
 
 namespace ItemConduit
 {
@@ -42,10 +39,7 @@ namespace ItemConduit
             // Register console commands
             ConduitCommands.RegisterCommands();
 
-            // Initialize GUI Manager
-            var guiManager = new GameObject("ConduitGUIManager");
-            guiManager.AddComponent<ICGUIManager>();
-            DontDestroyOnLoad(guiManager);
+            // Note: ICGUIManager is initialized in ZNetPatches when world loads (client-only)
 
             Logger.LogInfo($"{PluginName} v{PluginVersion} loaded");
         }

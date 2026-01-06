@@ -4,6 +4,8 @@ using HarmonyLib;
 using ItemConduit.Components;
 using ItemConduit.Core;
 using ItemConduit.Utils;
+using ItemConduit.Collision;
+using BepInEx;
 
 namespace ItemConduit.Patches
 {
@@ -33,118 +35,6 @@ namespace ItemConduit.Patches
             
         }
 
-        /// <summary>
-        /// Read prefab hash from ints collection and skip rest of ZDO data.
-        /// Returns prefab hash or 0 if not found.
-        /// </summary>
-        private static int ReadPrefabAndSkipZDOData(ZPackage pkg)
-        {
-            int prefabHash = 0;
-
-            // Skip rotation (3 floats)
-            pkg.ReadSingle();
-            pkg.ReadSingle();
-            pkg.ReadSingle();
-
-            byte typeMask = pkg.ReadByte();
-
-            // Floats
-            if ((typeMask & 1) != 0)
-            {
-                byte count = pkg.ReadByte();
-                for (int i = 0; i < count; i++)
-                {
-                    pkg.ReadInt();
-                    pkg.ReadSingle();
-                }
-            }
-
-            // Vec3s
-            if ((typeMask & 2) != 0)
-            {
-                byte count = pkg.ReadByte();
-                for (int i = 0; i < count; i++)
-                {
-                    pkg.ReadInt();
-                    pkg.ReadVector3();
-                }
-            }
-
-            // Quats
-            if ((typeMask & 4) != 0)
-            {
-                byte count = pkg.ReadByte();
-                for (int i = 0; i < count; i++)
-                {
-                    pkg.ReadInt();
-                    pkg.ReadQuaternion();
-                }
-            }
-
-            // Ints - check for prefab hash here
-            if ((typeMask & 8) != 0)
-            {
-                byte count = pkg.ReadByte();
-                for (int i = 0; i < count; i++)
-                {
-                    int key = pkg.ReadInt();
-                    int value = pkg.ReadInt();
-
-                    // Prefab is stored with key = hash of "prefab"
-                    if (key == PrefabHashKey)
-                    {
-                        prefabHash = value;
-                    }
-                }
-            }
-
-            // Longs
-            if ((typeMask & 16) != 0)
-            {
-                byte count = pkg.ReadByte();
-                for (int i = 0; i < count; i++)
-                {
-                    pkg.ReadInt();
-                    pkg.ReadLong();
-                }
-            }
-
-            // Strings
-            if ((typeMask & 32) != 0)
-            {
-                byte count = pkg.ReadByte();
-                for (int i = 0; i < count; i++)
-                {
-                    pkg.ReadInt();
-                    pkg.ReadString();
-                }
-            }
-
-            // ByteArrays
-            if ((typeMask & 64) != 0)
-            {
-                byte count = pkg.ReadByte();
-                for (int i = 0; i < count; i++)
-                {
-                    pkg.ReadInt();
-                    pkg.ReadByteArray();
-                }
-            }
-
-            // ZDOIDs
-            if ((typeMask & 128) != 0)
-            {
-                byte count = pkg.ReadByte();
-                for (int i = 0; i < count; i++)
-                {
-                    pkg.ReadString();
-                    pkg.ReadZDOID();
-                }
-            }
-
-            return prefabHash;
-        }
-
         [HarmonyPostfix]
         public static void Postfix(ZDOMan __instance, ZRpc rpc, ZPackage pkg)
         {
@@ -162,12 +52,10 @@ namespace ItemConduit.Patches
 	            	}
 	            }
                 ZPackage pkg2 = new ZPackage();
-                List<ZDO> zdoList = new List<ZDO>();
                 for (;;)
                 {
                     ZDOID zdoid = pkg.ReadZDOID();
                     if(zdoid.IsNone()) break;
-                    zdoList.Add(__instance.GetZDO(zdoid));
                     ushort ownerRevisionZdo = pkg.ReadUShort();
                     uint dataRevisionZdo = pkg.ReadUInt();
                     long ownerInternal = pkg.ReadLong();
@@ -197,6 +85,9 @@ namespace ItemConduit.Patches
                             ZDO conduitZDO = __instance.GetZDO(id);
                             conduitZDO.Set(ZDOFields.IC_NetworkID, "12345678");
                             Jotunn.Logger.LogDebug($"Network ID editted on server");
+                            var obb = conduitZDO.GetString(ZDOFields.IC_Bound, "");
+
+                            if (!obb.IsNullOrWhiteSpace()) Jotunn.Logger.LogDebug($"OBB: {obb}");
                         }
 
                     }

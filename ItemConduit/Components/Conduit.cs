@@ -107,30 +107,14 @@ namespace ItemConduit.Components
             // Register for GUI visualization
             ICGUIManager.Instance?.RegisterConduit(this);
 
-            // Server-side only: Initialize bounds and register with network
-            if (ZNet.instance.IsServer())
+            var zdo = m_nview.GetZDO();
+            var bounds = GetConduitBounds();
+            if (bounds.HasValue)
             {
-                var zdo = m_nview.GetZDO();
-                bool isNewPlacement = string.IsNullOrEmpty(NetworkID);
-
-                // Calculate and store OBB bounds for new placements
-                if (isNewPlacement)
-                {
-                    var bounds = GetConduitBounds();
-                    if (bounds.HasValue)
-                    {
-                        zdo.Set(ZDOFields.IC_Bound, bounds.Value.Serialize());
-                        NetworkBuilder.OnConduitPlaced(zdo);
-                    }
-                }
-
-                ConduitNetworkManager.Instance.RegisterConduit(
-                    zdo.m_uid,
-                    Mode,
-                    Connections,
-                    isNewPlacement
-                );
+                zdo.Set(ZDOFields.IC_Bound, bounds.Value.Serialize());
             }
+            
+
         }
 
 
