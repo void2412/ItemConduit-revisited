@@ -8,49 +8,17 @@ namespace ItemConduit.Core
     public static class NetworkBuilder
     {
         /// <summary>
-        /// Called when a conduit is placed. Detects connections and containers.
+        /// Called when a new conduit is placed. Detects connections and containers.
         /// </summary>
-        public static void OnConduitPlaced(ZDO zdo)
+        public static void OnConduitPlaced(ZDO zdo, OrientedBoundingBox bounds)
         {
-            if (!ZNet.instance.IsServer()) return;
-
             var zdoid = zdo.m_uid;
-            var position = zdo.GetPosition();
-            var rotation = zdo.GetRotation();
-
-            // Get or create OBB bounds
-            var boundStr = zdo.GetString(ZDOFields.IC_Bound, "");
-            OrientedBoundingBox bounds;
-
-            if (string.IsNullOrEmpty(boundStr))
-            {
-                // Create default bounds for beam (4m x 0.2m x 0.2m)
-                bounds = new OrientedBoundingBox(
-                    position,
-                    rotation,
-                    new UnityEngine.Vector3(2f, 0.1f, 0.1f)
-                );
-                zdo.Set(ZDOFields.IC_Bound, bounds.Serialize());
-            }
-            else
-            {
-                bounds = OrientedBoundingBox.Deserialize(boundStr);
-            }
 
             // Find connected conduits via OBB-SAT
             var connected = ConduitSpatialQuery.FindConnectedConduits(bounds, zdoid);
-
-            // Update connection list (ZPackage serialization)
             SetConnectionList(zdo, connected);
 
-            // Always detect container on placement (regardless of mode)
-            DetectAndAssignContainer(zdo, bounds, zdoid);
-
-            // Register with network manager
-            var mode = (ConduitMode)zdo.GetInt(ZDOFields.IC_Mode, 0);
-            ConduitNetworkManager.Instance.RegisterConduit(zdoid, mode, connected, isNewPlacement: true);
-
-            // Update connected conduits' connection lists
+            // Update neighbors' connection lists
             foreach (var connectedId in connected)
             {
                 var connZdo = ZDOMan.instance.GetZDO(connectedId);
@@ -63,6 +31,32 @@ namespace ItemConduit.Core
                     SetConnectionList(connZdo, existingConns);
                 }
             }
+
+            // Detect container
+            DetectAndAssignContainer(zdo, bounds, zdoid);
+
+            // Clear new flag
+            zdo.Set(ZDOFields.IC_IsNew, false);
+
+            // Register with network manager
+            var mode = (ConduitMode)zdo.GetInt(ZDOFields.IC_Mode, 0);
+            ConduitNetworkManager.Instance.RegisterConduit(zdoid, mode, connected, isNewPlacement: true);
+
+            Jotunn.Logger.LogDebug($"[NetworkBuilder] OnConduitPlaced {zdoid}: {connected.Count} connections");
+        }
+
+        /// <summary>
+        /// Called when an existing conduit is updated (mode change, etc).
+        /// </summary>
+        public static void OnConduitUpdate(ZDO zdo)
+        {
+            var zdoid = zdo.m_uid;
+            var connected = GetConnectionList(zdo);
+            var mode = (ConduitMode)zdo.GetInt(ZDOFields.IC_Mode, 0);
+
+            ConduitNetworkManager.Instance.RegisterConduit(zdoid, mode, connected, isNewPlacement: false);
+
+            Jotunn.Logger.LogDebug($"[NetworkBuilder] OnConduitUpdate {zdoid}: mode={mode}");
         }
 
         /// <summary>
@@ -83,18 +77,20 @@ namespace ItemConduit.Core
         }
 
         /// <summary>
-        /// Called when a conduit is removed.
+        /// Called when a conduit is removed. Uses cached data since ZDO is already destroyed.
         /// </summary>
-        public static void OnConduitRemoved(ZDOID zdoid)
+        public static void OnConduitRemoved(CachedConduitData cached)
         {
             if (!ZNet.instance.IsServer()) return;
 
-            ConduitNetworkManager.Instance.UnregisterConduit(zdoid);
+            var zdoid = cached.Zdoid;
 
-            var zdo = ZDOMan.instance.GetZDO(zdoid);
-            if (zdo == null) return;
+            ConduitNetworkManager.Instance.UnregisterConduit(cached);
 
-            var connections = GetConnectionList(zdo);
+            // Use cached connections - ZDO no longer exists
+            var connections = cached.Connections;
+
+            Jotunn.Logger.LogDebug($"[NetworkBuilder] OnConduitRemoved {zdoid}: updating {connections.Count} neighbors");
 
             foreach (var connId in connections)
             {
@@ -106,6 +102,7 @@ namespace ItemConduit.Core
                     .ToList();
 
                 SetConnectionList(connZdo, existingConns);
+                Jotunn.Logger.LogDebug($"[NetworkBuilder] Updated neighbor {connId}: now {existingConns.Count} connections");
             }
         }
 

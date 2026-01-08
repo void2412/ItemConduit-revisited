@@ -76,7 +76,7 @@ namespace ItemConduit.GUI
             wireframeObj.transform.SetParent(conduit.transform, false);
 
             // OBB wireframe (green) - 12 edges
-            var renderers = new LineRenderer[12];
+            var obbRenderers = new LineRenderer[12];
             for (int i = 0; i < 12; i++)
             {
                 var edgeObj = new GameObject($"OBB_Edge_{i}");
@@ -90,15 +90,33 @@ namespace ItemConduit.GUI
                 lr.endWidth = 0.02f;
                 lr.positionCount = 2;
                 lr.useWorldSpace = true;
-                renderers[i] = lr;
+                obbRenderers[i] = lr;
+            }
+
+            // Tolerance wireframe (red) - 12 edges showing extended bounds
+            var toleranceRenderers = new LineRenderer[12];
+            for (int i = 0; i < 12; i++)
+            {
+                var edgeObj = new GameObject($"Tolerance_Edge_{i}");
+                edgeObj.transform.SetParent(wireframeObj.transform, false);
+
+                var lr = edgeObj.AddComponent<LineRenderer>();
+                lr.material = _lineMaterial;
+                lr.startColor = Color.red;
+                lr.endColor = Color.red;
+                lr.startWidth = 0.015f;
+                lr.endWidth = 0.015f;
+                lr.positionCount = 2;
+                lr.useWorldSpace = true;
+                toleranceRenderers[i] = lr;
             }
 
             _wireframeObjects[conduit] = wireframeObj;
-            UpdateWireframePositions(collider, renderers);
+            UpdateWireframePositions(collider, obbRenderers, toleranceRenderers);
             wireframeObj.SetActive(IsWireframeEnabled());
         }
 
-        private void UpdateWireframePositions(BoxCollider collider, LineRenderer[] renderers)
+        private void UpdateWireframePositions(BoxCollider collider, LineRenderer[] obbRenderers, LineRenderer[] toleranceRenderers)
         {
             var colliderTransform = collider.transform;
             var scaledSize = Vector3.Scale(collider.size, colliderTransform.lossyScale);
@@ -106,7 +124,24 @@ namespace ItemConduit.GUI
             var center = colliderTransform.TransformPoint(collider.center);
             var rot = colliderTransform.rotation;
 
-            Vector3[] corners = {
+            // Calculate tolerance-extended halfExtents (same logic as Conduit.GetConduitBounds)
+            var tolerance = Plugin.Instance.ConduitConfig.ConnectionTolerance.Value;
+            var toleranceHalfExtents = halfExtents;
+            if (toleranceHalfExtents.x >= toleranceHalfExtents.y && toleranceHalfExtents.x >= toleranceHalfExtents.z)
+                toleranceHalfExtents.x += tolerance;
+            else if (toleranceHalfExtents.y >= toleranceHalfExtents.x && toleranceHalfExtents.y >= toleranceHalfExtents.z)
+                toleranceHalfExtents.y += tolerance;
+            else
+                toleranceHalfExtents.z += tolerance;
+
+            int[,] edges = {
+                {0,1}, {1,2}, {2,3}, {3,0},
+                {4,5}, {5,6}, {6,7}, {7,4},
+                {0,4}, {1,5}, {2,6}, {3,7}
+            };
+
+            // OBB corners (green wireframe)
+            Vector3[] obbCorners = {
                 center + rot * new Vector3(-halfExtents.x, -halfExtents.y, -halfExtents.z),
                 center + rot * new Vector3(halfExtents.x, -halfExtents.y, -halfExtents.z),
                 center + rot * new Vector3(halfExtents.x, -halfExtents.y, halfExtents.z),
@@ -117,16 +152,28 @@ namespace ItemConduit.GUI
                 center + rot * new Vector3(-halfExtents.x, halfExtents.y, halfExtents.z)
             };
 
-            int[,] edges = {
-                {0,1}, {1,2}, {2,3}, {3,0},
-                {4,5}, {5,6}, {6,7}, {7,4},
-                {0,4}, {1,5}, {2,6}, {3,7}
+            for (int i = 0; i < 12; i++)
+            {
+                obbRenderers[i].SetPosition(0, obbCorners[edges[i,0]]);
+                obbRenderers[i].SetPosition(1, obbCorners[edges[i,1]]);
+            }
+
+            // Tolerance corners (red wireframe)
+            Vector3[] toleranceCorners = {
+                center + rot * new Vector3(-toleranceHalfExtents.x, -toleranceHalfExtents.y, -toleranceHalfExtents.z),
+                center + rot * new Vector3(toleranceHalfExtents.x, -toleranceHalfExtents.y, -toleranceHalfExtents.z),
+                center + rot * new Vector3(toleranceHalfExtents.x, -toleranceHalfExtents.y, toleranceHalfExtents.z),
+                center + rot * new Vector3(-toleranceHalfExtents.x, -toleranceHalfExtents.y, toleranceHalfExtents.z),
+                center + rot * new Vector3(-toleranceHalfExtents.x, toleranceHalfExtents.y, -toleranceHalfExtents.z),
+                center + rot * new Vector3(toleranceHalfExtents.x, toleranceHalfExtents.y, -toleranceHalfExtents.z),
+                center + rot * new Vector3(toleranceHalfExtents.x, toleranceHalfExtents.y, toleranceHalfExtents.z),
+                center + rot * new Vector3(-toleranceHalfExtents.x, toleranceHalfExtents.y, toleranceHalfExtents.z)
             };
 
             for (int i = 0; i < 12; i++)
             {
-                renderers[i].SetPosition(0, corners[edges[i,0]]);
-                renderers[i].SetPosition(1, corners[edges[i,1]]);
+                toleranceRenderers[i].SetPosition(0, toleranceCorners[edges[i,0]]);
+                toleranceRenderers[i].SetPosition(1, toleranceCorners[edges[i,1]]);
             }
         }
 

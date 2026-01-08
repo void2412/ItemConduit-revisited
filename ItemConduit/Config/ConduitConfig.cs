@@ -7,6 +7,8 @@ namespace ItemConduit.Config
         public ConfigEntry<int> TransferRate { get; private set; }
         public ConfigEntry<float> TransferTick { get; private set; }
         public ConfigEntry<bool> WireframeDefault { get; private set; }
+        public ConfigEntry<bool> ShowDebug { get; private set; }
+        public ConfigEntry<float> ConnectionTolerance { get; private set; }
 
         public ConduitConfig(ConfigFile config)
         {
@@ -35,6 +37,23 @@ namespace ItemConduit.Config
                 "WireframeDefault",
                 false,
                 "Enable wireframe visualization by default"
+            );
+
+            ShowDebug = config.Bind(
+                "Debug",
+                "ShowDebug",
+                false,
+                "Show debug info (connection ZDOIDs) in hover text"
+            );
+
+            ConnectionTolerance = config.Bind(
+                "Connection",
+                "ConnectionTolerance",
+                0.02f,
+                new ConfigDescription(
+                    "Tolerance added to conduit bounds for end-to-end collision detection (in meters)",
+                    new AcceptableValueRange<float>(0.01f, 0.2f)
+                )
             );
 
             // Apply config changes

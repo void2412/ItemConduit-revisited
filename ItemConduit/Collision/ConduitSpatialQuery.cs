@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ItemConduit.Components;
 using ItemConduit.Utils;
 using UnityEngine;
 
@@ -6,7 +7,7 @@ namespace ItemConduit.Collision
 {
     public static class ConduitSpatialQuery
     {
-        private const float SearchRadius = 10f;
+        private const float SearchRadius = 5f;
         private const float ContainerSearchRadius = 5f;
 
         // Container prefab hashes (chest variants)
@@ -28,6 +29,22 @@ namespace ItemConduit.Collision
             _containerHashesInitialized = true;
         }
 
+        /// <summary>
+        /// Expand OBB by tolerance on the longest axis for reliable end-to-end collision detection.
+        /// </summary>
+        private static OrientedBoundingBox ExpandByTolerance(OrientedBoundingBox obb, float tolerance)
+        {
+            var halfExtents = obb.HalfExtents;
+            if (halfExtents.x >= halfExtents.y && halfExtents.x >= halfExtents.z)
+                halfExtents.x += tolerance;
+            else if (halfExtents.y >= halfExtents.x && halfExtents.y >= halfExtents.z)
+                halfExtents.y += tolerance;
+            else
+                halfExtents.z += tolerance;
+
+            return new OrientedBoundingBox(obb.Center, obb.Rotation, halfExtents);
+        }
+
         public static List<ZDOID> FindConnectedConduits(
             OrientedBoundingBox sourceBounds,
             ZDOID sourceId)
@@ -36,21 +53,24 @@ namespace ItemConduit.Collision
             var sector = ZoneSystem.GetZone(sourceBounds.Center);
             var zdos = new List<ZDO>();
 
-            // Query nearby sectors
-            for (int x = -1; x <= 1; x++)
-            {
-                for (int y = -1; y <= 1; y++)
-                {
-                    var checkSector = new Vector2i(sector.x + x, sector.y + y);
-                    ZDOMan.instance.FindSectorObjects(checkSector, 1, 0, zdos);
-                }
-            }
+            // Query 3x3 sectors around center (area=1 covers 3x3)
+            ZDOMan.instance.FindSectorObjects(sector, 1, 0, zdos);
 
+            // Apply tolerance to source bounds for collision detection
+            var tolerance = Plugin.Instance.ConduitConfig.ConnectionTolerance.Value;
+            var expandedSource = ExpandByTolerance(sourceBounds, tolerance);
+
+            Jotunn.Logger.LogDebug($"[SpatialQuery] Found {zdos.Count} ZDOs in 3x3 sectors");
             foreach (var zdo in zdos)
             {
                 if (zdo.m_uid == sourceId) continue;
 
-                // Check if ZDO is a conduit
+                // Check if ZDO is a conduit prefab
+                if (!ConduitPrefabs.ConduitPrefabHashes.Contains(zdo.GetPrefab())) continue;
+
+                Jotunn.Logger.LogDebug($"[SpatialQuery] ZDO {zdo.m_uid} prefab={zdo.GetPrefab()} passed prefab check");
+
+                // Check if ZDO has conduit mode set
                 var mode = zdo.GetInt(ZDOFields.IC_Mode, -1);
                 if (mode < 0) continue;
 
@@ -61,8 +81,11 @@ namespace ItemConduit.Collision
                 var boundStr = zdo.GetString(ZDOFields.IC_Bound, "");
                 if (string.IsNullOrEmpty(boundStr)) continue;
 
+                // Apply tolerance to target bounds as well
                 var targetBounds = OrientedBoundingBox.Deserialize(boundStr);
-                if (OBBCollision.TestOBBOBB(sourceBounds, targetBounds))
+                var expandedTarget = ExpandByTolerance(targetBounds, tolerance);
+
+                if (OBBCollision.TestOBBOBB(expandedSource, expandedTarget))
                 {
                     connected.Add(zdo.m_uid);
                 }
@@ -80,15 +103,8 @@ namespace ItemConduit.Collision
             var sector = ZoneSystem.GetZone(conduitBounds.Center);
             var zdos = new List<ZDO>();
 
-            // Query nearby sectors
-            for (int x = -1; x <= 1; x++)
-            {
-                for (int y = -1; y <= 1; y++)
-                {
-                    var checkSector = new Vector2i(sector.x + x, sector.y + y);
-                    ZDOMan.instance.FindSectorObjects(checkSector, 1, 0, zdos);
-                }
-            }
+            // Query 3x3 sectors around center (area=1 covers 3x3)
+            ZDOMan.instance.FindSectorObjects(sector, 1, 0, zdos);
 
             ZDOID? closestContainer = null;
             float closestDistance = float.MaxValue;

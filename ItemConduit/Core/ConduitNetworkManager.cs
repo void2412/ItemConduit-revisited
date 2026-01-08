@@ -31,13 +31,36 @@ namespace ItemConduit.Core
                 }
             }
 
-            // Find or create network (new placement or no existing network)
-            string networkId = FindConnectedNetworkId(connections);
-            if (networkId == null)
+            // Find all connected networks and pick the largest (minimizes ZDO writes on merge)
+            var connectedNetworkIds = connections
+                .Where(c => _conduitToNetwork.ContainsKey(c))
+                .Select(c => _conduitToNetwork[c])
+                .Distinct()
+                .ToList();
+
+            string networkId;
+            if (connectedNetworkIds.Count == 0)
             {
+                // No connected networks - create new
                 var network = new ConduitNetwork();
                 networkId = network.NetworkId;
                 _networks[networkId] = network;
+            }
+            else if (connectedNetworkIds.Count == 1)
+            {
+                // Single network - just use it
+                networkId = connectedNetworkIds[0];
+            }
+            else
+            {
+                // Multiple networks - find largest to minimize ZDO writes
+                networkId = connectedNetworkIds
+                    .OrderByDescending(id => _networks[id].Conduits.Count)
+                    .First();
+
+                // Merge smaller networks into largest
+                foreach (var sourceNetId in connectedNetworkIds.Where(id => id != networkId))
+                    MergeNetworks(sourceNetId, networkId);
             }
 
             _networks[networkId].AddConduit(zdoid, mode);
@@ -45,18 +68,17 @@ namespace ItemConduit.Core
 
             // Update ZDO with network ID (server assigns to new placements)
             zdo?.Set(ZDOFields.IC_NetworkID, networkId);
-
-            // Check for network merges
-            CheckAndMergeNetworks(connections, networkId);
         }
 
-        public void UnregisterConduit(ZDOID zdoid)
+        public void UnregisterConduit(CachedConduitData cached)
         {
+            var zdoid = cached.Zdoid;
+
             if (!_conduitToNetwork.TryGetValue(zdoid, out var networkId))
                 return;
 
-            // IMPORTANT: Get connections BEFORE removing from network
-            var connections = GetConnectionsOf(zdoid);
+            // Use cached connections - ZDO already destroyed
+            var connections = cached.Connections;
 
             var network = _networks[networkId];
             network.RemoveConduit(zdoid);
@@ -104,29 +126,9 @@ namespace ItemConduit.Core
             return _networks.Values;
         }
 
-        private string FindConnectedNetworkId(List<ZDOID> connections)
-        {
-            foreach (var conn in connections)
-            {
-                if (_conduitToNetwork.TryGetValue(conn, out var netId))
-                    return netId;
-            }
-            return null;
-        }
-
-        private void CheckAndMergeNetworks(List<ZDOID> connections, string targetNetworkId)
-        {
-            var networksToMerge = connections
-                .Where(c => _conduitToNetwork.ContainsKey(c))
-                .Select(c => _conduitToNetwork[c])
-                .Where(n => n != targetNetworkId)
-                .Distinct()
-                .ToList();
-
-            foreach (var sourceNetId in networksToMerge)
-                MergeNetworks(sourceNetId, targetNetworkId);
-        }
-
+        /// <summary>
+        /// Merge source network into target. All source conduits get target's network ID.
+        /// </summary>
         private void MergeNetworks(string sourceId, string targetId)
         {
             if (!_networks.TryGetValue(sourceId, out var source))
@@ -134,6 +136,7 @@ namespace ItemConduit.Core
             if (!_networks.TryGetValue(targetId, out var target))
                 return;
 
+            var sourceCount = source.Conduits.Count;
             foreach (var zdoid in source.Conduits)
             {
                 var mode = GetConduitMode(zdoid);
@@ -146,11 +149,12 @@ namespace ItemConduit.Core
             }
 
             _networks.Remove(sourceId);
+            Jotunn.Logger.LogInfo($"Network merge: {sourceCount} conduits from {sourceId.Substring(0, 8)} → {targetId.Substring(0, 8)} (target now has {target.Conduits.Count})");
         }
 
         /// <summary>
         /// BFS from neighbors of removed conduit to detect disconnected subgraphs.
-        /// If neighbors can't reach each other, network has split.
+        /// Optimized: Larger component keeps original network ID to minimize ZDO syncs.
         /// </summary>
         private void CheckNetworkSplit(string networkId, ZDOID removedConduit, List<ZDOID> neighbors)
         {
@@ -159,70 +163,73 @@ namespace ItemConduit.Core
 
             var network = _networks[networkId];
 
-            // BFS from first neighbor to find its connected component
-            var visited = new HashSet<ZDOID>();
-            var queue = new Queue<ZDOID>();
+            // Find all connected components via BFS from each unvisited neighbor
+            var globalVisited = new HashSet<ZDOID>();
+            var components = new List<HashSet<ZDOID>>();
 
-            queue.Enqueue(neighbors[0]);
-            visited.Add(neighbors[0]);
-
-            while (queue.Count > 0)
+            foreach (var neighbor in neighbors)
             {
-                var current = queue.Dequeue();
-                foreach (var conn in GetConnectionsOf(current))
+                if (globalVisited.Contains(neighbor)) continue;
+
+                // BFS to find this component
+                var component = new HashSet<ZDOID>();
+                var queue = new Queue<ZDOID>();
+                queue.Enqueue(neighbor);
+
+                while (queue.Count > 0)
                 {
-                    if (conn == removedConduit) continue; // Skip removed
-                    if (!network.Conduits.Contains(conn)) continue; // Not in this network
-                    if (visited.Add(conn))
-                        queue.Enqueue(conn);
-                }
-            }
+                    var current = queue.Dequeue();
+                    if (!globalVisited.Add(current)) continue;
+                    if (!network.Conduits.Contains(current)) continue;
 
-            // Check if all other neighbors were reached
-            var unreached = neighbors.Skip(1).Where(n => !visited.Contains(n)).ToList();
+                    component.Add(current);
 
-            if (unreached.Count == 0)
-                return; // All neighbors still connected → no split
-
-            // Split detected: Create new network(s) for unreached components
-            foreach (var orphan in unreached)
-            {
-                if (visited.Contains(orphan)) continue; // Already processed
-
-                // BFS to find this orphan's connected component
-                var newNetwork = new ConduitNetwork();
-                var orphanQueue = new Queue<ZDOID>();
-                orphanQueue.Enqueue(orphan);
-
-                while (orphanQueue.Count > 0)
-                {
-                    var node = orphanQueue.Dequeue();
-                    if (!visited.Add(node)) continue; // Already visited
-                    if (!network.Conduits.Contains(node)) continue; // Not in original network
-
-                    var mode = GetConduitMode(node);
-                    newNetwork.AddConduit(node, mode);
-                    _conduitToNetwork[node] = newNetwork.NetworkId;
-
-                    // Update ZDO with new network ID
-                    var zdo = ZDOMan.instance.GetZDO(node);
-                    zdo?.Set(ZDOFields.IC_NetworkID, newNetwork.NetworkId);
-
-                    foreach (var conn in GetConnectionsOf(node))
+                    foreach (var conn in GetConnectionsOf(current))
                     {
-                        if (conn != removedConduit && !visited.Contains(conn))
-                            orphanQueue.Enqueue(conn);
+                        if (conn == removedConduit) continue;
+                        if (!globalVisited.Contains(conn) && network.Conduits.Contains(conn))
+                            queue.Enqueue(conn);
                     }
                 }
 
-                // Register new network and remove conduits from original
-                _networks[newNetwork.NetworkId] = newNetwork;
-                foreach (var zdoid in newNetwork.Conduits)
+                if (component.Count > 0)
+                    components.Add(component);
+            }
+
+            // No split if only one component found
+            if (components.Count <= 1)
+                return;
+
+            // Find largest component - it keeps the original network ID
+            var largestIdx = 0;
+            for (int i = 1; i < components.Count; i++)
+            {
+                if (components[i].Count > components[largestIdx].Count)
+                    largestIdx = i;
+            }
+
+            // Reassign smaller components to new networks (minimizes ZDO writes)
+            for (int i = 0; i < components.Count; i++)
+            {
+                if (i == largestIdx) continue; // Largest keeps original
+
+                var component = components[i];
+                var newNetwork = new ConduitNetwork();
+
+                foreach (var zdoid in component)
                 {
+                    var mode = GetConduitMode(zdoid);
+                    newNetwork.AddConduit(zdoid, mode);
+                    _conduitToNetwork[zdoid] = newNetwork.NetworkId;
                     network.RemoveConduit(zdoid);
+
+                    // Update ZDO with new network ID
+                    var zdo = ZDOMan.instance.GetZDO(zdoid);
+                    zdo?.Set(ZDOFields.IC_NetworkID, newNetwork.NetworkId);
                 }
 
-                Jotunn.Logger.LogInfo($"Network split: created {newNetwork.NetworkId.Substring(0, 8)} with {newNetwork.Conduits.Count} conduits");
+                _networks[newNetwork.NetworkId] = newNetwork;
+                Jotunn.Logger.LogInfo($"Network split: {newNetwork.Conduits.Count} conduits → new {newNetwork.NetworkId.Substring(0, 8)} (kept {components[largestIdx].Count} in original)");
             }
         }
 

@@ -5,6 +5,7 @@ using ItemConduit.Core;
 using ItemConduit.GUI;
 using ItemConduit.Utils;
 using UnityEngine;
+using static ItemConduit.Plugin;
 
 namespace ItemConduit.Components
 {
@@ -120,8 +121,14 @@ namespace ItemConduit.Components
             //Set Init Flag for server
             zdo.Set(ZDOFields.IC_IsNew, true);
 
-            //Set OBB bound
-            var bounds = GetConduitBounds();
+			// Initialize default mode if not set (required for collision detection)
+			if (zdo.GetInt(ZDOFields.IC_Mode, -1) < 0)
+			{
+				zdo.Set(ZDOFields.IC_Mode, (int)ConduitMode.Conduit);
+			}
+
+			//Set OBB bound
+			var bounds = GetConduitBounds();
             if (bounds.HasValue)
             {
                 zdo.Set(ZDOFields.IC_Bound, bounds.Value.Serialize());
@@ -145,6 +152,7 @@ namespace ItemConduit.Components
             }
 
             // Use collider's transform (may be on child object)
+            // Store raw OBB - tolerance is applied server-side during collision detection
             var colliderTransform = collider.transform;
             var scaledSize = Vector3.Scale(collider.size, colliderTransform.lossyScale);
             var halfExtents = scaledSize / 2f;
@@ -186,16 +194,17 @@ namespace ItemConduit.Components
             if (m_nview == null || !m_nview.IsValid()) return "";
 
             var sb = new StringBuilder();
-            sb.AppendLine("<color=yellow><b>Conduit</b></color>");
-            sb.AppendLine();
+
 
             var modeColor = Mode switch
             {
                 ConduitMode.Extract => "orange",
                 ConduitMode.Insert => "green",
+				ConduitMode.Conduit => "yellow",
                 _ => "white"
             };
-            sb.AppendLine($"Mode: <color={modeColor}>{Mode}</color>");
+            sb.AppendLine($"<color={modeColor}>{Mode}</color>");
+            sb.AppendLine($"<color=#00FFFF>ZDOID: {m_nview.GetZDO().m_uid}</color>");
 
             if (Mode != ConduitMode.Conduit)
             {
@@ -206,9 +215,16 @@ namespace ItemConduit.Components
             var netId = NetworkID;
             if (!string.IsNullOrEmpty(netId))
             {
-                sb.AppendLine($"Network: {netId.Substring(0, 8)}...");
+                sb.AppendLine($"Network: {netId.Substring(0,8)}");
             }
-            sb.AppendLine($"Connections: {Connections.Count}");
+
+            var connections = Connections;
+            sb.AppendLine($"Connections: {connections.Count}");
+            if (Plugin.Instance.ConduitConfig.ShowDebug.Value && connections.Count > 0)
+            {
+                foreach (var conn in connections)
+                    sb.AppendLine($"  - {conn}");
+            }
 
             if (Mode != ConduitMode.Conduit)
             {

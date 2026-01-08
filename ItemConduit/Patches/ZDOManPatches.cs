@@ -112,8 +112,9 @@ namespace ItemConduit.Patches
 
             if (ConduitPrefabs.ConduitPrefabHashes.Contains(zdo.GetPrefab()))
             {
-                Jotunn.Logger.LogDebug($"[HandleDestroyedZDO] Conduit {uid} destroyed, queueing removal");
-                ConduitProcessor.QueueConduitRemoval(uid);
+                Jotunn.Logger.LogDebug($"[HandleDestroyedZDO] Conduit {uid} destroyed, caching data for removal");
+                // Pass ZDO so data can be cached before destruction
+                ConduitProcessor.QueueConduitRemoval(zdo);
             }
         }
     }

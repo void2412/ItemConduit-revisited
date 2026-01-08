@@ -5,13 +5,24 @@ using ItemConduit.Utils;
 namespace ItemConduit.Core
 {
     /// <summary>
+    /// Cached ZDO data for removal processing (ZDO destroyed before we process).
+    /// </summary>
+    public class CachedConduitData
+    {
+        public ZDOID Zdoid { get; set; }
+        public List<ZDOID> Connections { get; set; }
+        public ConduitMode Mode { get; set; }
+        public string NetworkID { get; set; }
+    }
+
+    /// <summary>
     /// Unified conduit processing queue. Handles both remote (RPC_ZDOData)
     /// and local (host/singleplayer) conduit changes.
     /// </summary>
     public static class ConduitProcessor
     {
         private static readonly HashSet<ZDOID> _pendingConduits = new();
-        private static readonly HashSet<ZDOID> _pendingConduitsRemoval = new();
+        private static readonly Dictionary<ZDOID, CachedConduitData> _pendingRemovals = new();
 
         /// <summary>
         /// Queue a conduit for server-side processing.
@@ -25,11 +36,25 @@ namespace ItemConduit.Core
 
         /// <summary>
         /// Queue a conduit for removal. Call from HandleDestroyedZDO prefix.
+        /// Caches ZDO data since ZDO will be destroyed before processing.
         /// </summary>
-        public static void QueueConduitRemoval(ZDOID zdoid)
+        public static void QueueConduitRemoval(ZDO zdo)
         {
+            if (zdo == null) return;
+            var zdoid = zdo.m_uid;
             if (zdoid.IsNone()) return;
-            _pendingConduitsRemoval.Add(zdoid);
+
+            // Cache ZDO data before it's destroyed
+            var cached = new CachedConduitData
+            {
+                Zdoid = zdoid,
+                Connections = NetworkBuilder.GetConnectionList(zdo),
+                Mode = (ConduitMode)zdo.GetInt(ZDOFields.IC_Mode, 0),
+                NetworkID = zdo.GetString(ZDOFields.IC_NetworkID, "")
+            };
+
+            _pendingRemovals[zdoid] = cached;
+            Jotunn.Logger.LogDebug($"[ConduitProcessor] Cached {zdoid} with {cached.Connections.Count} connections for removal");
         }
 
         /// <summary>
@@ -39,15 +64,15 @@ namespace ItemConduit.Core
         {
             if (!ZNet.instance?.IsServer() ?? true) return;
 
-            // Process removals first
-            if (_pendingConduitsRemoval.Count > 0)
+            // Process removals first (using cached data)
+            if (_pendingRemovals.Count > 0)
             {
-                foreach (var zdoid in _pendingConduitsRemoval)
+                foreach (var cached in _pendingRemovals.Values)
                 {
-                    NetworkBuilder.OnConduitRemoved(zdoid);
-                    Jotunn.Logger.LogDebug($"[ConduitProcessor] Removed conduit {zdoid}");
+                    NetworkBuilder.OnConduitRemoved(cached);
+                    Jotunn.Logger.LogDebug($"[ConduitProcessor] Removed conduit {cached.Zdoid}");
                 }
-                _pendingConduitsRemoval.Clear();
+                _pendingRemovals.Clear();
             }
 
             // Process additions/updates
@@ -66,65 +91,30 @@ namespace ItemConduit.Core
             var zdo = ZDOMan.instance?.GetZDO(zdoid);
             if (zdo == null) return;
 
-            // Get OBB bounds
-            var boundStr = zdo.GetString(ZDOFields.IC_Bound, "");
-            if (string.IsNullOrEmpty(boundStr))
-            {
-                Jotunn.Logger.LogWarning($"[ConduitProcessor] No bounds for {zdoid}");
-                return;
-            }
-
-            var bounds = OrientedBoundingBox.Deserialize(boundStr);
-
-            // Detect connections
-            List<ZDOID> connected = new List<ZDOID>();
             bool isNew = zdo.GetBool(ZDOFields.IC_IsNew);
-            Jotunn.Logger.LogDebug($"Is New Placement: {isNew}");
+
             if (isNew)
             {
-                connected = ConduitSpatialQuery.FindConnectedConduits(bounds, zdoid);
-                NetworkBuilder.SetConnectionList(zdo, connected);
-
-                // Update neighbors' connection lists
-                foreach (var connectedId in connected)
+                // Get OBB bounds for new placement
+                var boundStr = zdo.GetString(ZDOFields.IC_Bound, "");
+                if (string.IsNullOrEmpty(boundStr))
                 {
-                    var connZdo = ZDOMan.instance.GetZDO(connectedId);
-                    if (connZdo == null) continue;
-
-                    var existingConns = NetworkBuilder.GetConnectionList(connZdo);
-                    if (!existingConns.Contains(zdoid))
-                    {
-                        existingConns.Add(zdoid);
-                        NetworkBuilder.SetConnectionList(connZdo, existingConns);
-                    }
+                    Jotunn.Logger.LogWarning($"[ConduitProcessor] No bounds for {zdoid}");
+                    return;
                 }
-
-                // Detect container
-                NetworkBuilder.DetectAndAssignContainer(zdo, bounds, zdoid);
-
-                zdo.Set(ZDOFields.IC_IsNew, false);
-                Jotunn.Logger.LogDebug($"Connections Detection Completed: {connected.ToArray().ToString()}");
+                var bounds = OrientedBoundingBox.Deserialize(boundStr);
+                NetworkBuilder.OnConduitPlaced(zdo, bounds);
             }
             else
             {
-                connected = NetworkBuilder.GetConnectionList(zdo);
+                NetworkBuilder.OnConduitUpdate(zdo);
             }
-            
-            // Register/update in network manager
-            var mode = (ConduitMode)zdo.GetInt(ZDOFields.IC_Mode, 0);
-            ConduitNetworkManager.Instance.RegisterConduit(zdoid, mode, connected, isNewPlacement: isNew);
-
-            Jotunn.Logger.LogDebug($"Register Conduit Completed.");
-
-            isNew = false;
-
-            Jotunn.Logger.LogDebug($"[ConduitProcessor] Processed {zdoid}: {connected.Count} connections");
         }
 
         public static void Clear()
         {
             _pendingConduits.Clear();
-            _pendingConduitsRemoval.Clear();
+            _pendingRemovals.Clear();
         }
     }
 }
