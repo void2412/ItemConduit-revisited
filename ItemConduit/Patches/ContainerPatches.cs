@@ -81,6 +81,7 @@ namespace ItemConduit.Patches
         [HarmonyPrefix]
         public static void Prefix(Container __instance)
         {
+			Jotunn.Logger.LogDebug($"Container Destroyed, Unregistering from GUI manager");
             ICGUIManager.Instance?.UnregisterContainer(__instance);
         }
     }
