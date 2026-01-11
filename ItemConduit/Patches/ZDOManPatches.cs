@@ -2,22 +2,19 @@ using System.Collections.Generic;
 using HarmonyLib;
 using ItemConduit.Components;
 using ItemConduit.Core;
-using BepInEx;
 
 namespace ItemConduit.Patches
 {
     /// <summary>
-    /// Patch ZDOMan.RPC_ZDOData to detect conduit ZDOs during network sync.
-    /// Prefix filters by prefabHash, Postfix processes only conduit ZDOs.
+    /// Patch ZDOMan.RPC_ZDOData to detect conduit and container ZDOs during network sync.
+    /// Postfix processes after ZDO.Deserialize so prefab hash is available.
     /// </summary>
     [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.RPC_ZDOData))]
     public static class ZDOManPatches
     {
-        // Only conduit ZDOIDs (pre-filtered by prefabHash)
-        private static List<ZDOID> _conduitZDOIDs = new List<ZDOID>();
+        private static HashSet<ZDOID> _conduitZDOIDs = new HashSet<ZDOID>();
+        private static HashSet<ZDOID> _containerZDOIDs = new HashSet<ZDOID>();
 
-        // Prefab key in ints collection
-        private static readonly int PrefabHashKey = "prefab".GetStableHashCode();
         private static int originalPos;
 
         [HarmonyPrefix]
@@ -39,22 +36,23 @@ namespace ItemConduit.Patches
             try
             {
                 _conduitZDOIDs.Clear();
+                _containerZDOIDs.Clear();
                 pkg.SetPos(originalPos);
                 int num2 = pkg.ReadInt();
                 for (int i = 0; i < num2; i++)
-	            {
-	            	ZDOID id = pkg.ReadZDOID();
-	            	ZDO zdo = __instance.GetZDO(id);
-	            	if (zdo != null)
-	            	{
-	            		zdo.InvalidateSector();
-	            	}
-	            }
+                {
+                    ZDOID id = pkg.ReadZDOID();
+                    ZDO zdo = __instance.GetZDO(id);
+                    if (zdo != null)
+                    {
+                        zdo.InvalidateSector();
+                    }
+                }
                 ZPackage pkg2 = new ZPackage();
                 for (;;)
                 {
                     ZDOID zdoid = pkg.ReadZDOID();
-                    if(zdoid.IsNone()) break;
+                    if (zdoid.IsNone()) break;
                     ushort ownerRevisionZdo = pkg.ReadUShort();
                     uint dataRevisionZdo = pkg.ReadUInt();
                     long ownerInternal = pkg.ReadLong();
@@ -62,35 +60,48 @@ namespace ItemConduit.Patches
                     pkg.ReadPackage(ref pkg2);
                     ZDO zdo2 = __instance.GetZDO(zdoid);
 
-                    if (zdo2!=null && ConduitPrefabs.ConduitPrefabHashes.Contains(zdo2.GetPrefab()))
+                    if (zdo2 == null) continue;
+
+                    int prefabHash = zdo2.GetPrefab();
+
+                    // Check if conduit
+                    if (ConduitPrefabs.ConduitPrefabHashes.Contains(prefabHash))
                     {
-                        Jotunn.Logger.LogDebug($"[ZDOManPatches] Prefix: Found {zdoid} as {zdo2.GetPrefab()}");
+                        Jotunn.Logger.LogDebug($"[ZDOManPatches] Found conduit {zdoid} from Zpackage");
                         _conduitZDOIDs.Add(zdoid);
+                    }
+                    // Check if container
+                    else if (ContainerPrefabs.ContainerPrefabHashes.Contains(prefabHash))
+                    {
+                        Jotunn.Logger.LogDebug($"[ZDOManPatches] Found container {zdoid} from Zpackage");
+                        _containerZDOIDs.Add(zdoid);
                     }
                 }
 
+                if (!ZNet.instance.IsServer()) return;
+
                 // Queue conduits for server-side processing
-                if (_conduitZDOIDs.Count > 0 && ZNet.instance.IsServer())
+                if (_conduitZDOIDs.Count > 0)
                 {
-                    Jotunn.Logger.LogDebug($"[ZDOManPatches] Queueing {_conduitZDOIDs.Count} conduits for processing");
+                    Jotunn.Logger.LogDebug($"[ZDOManPatches] Queueing {_conduitZDOIDs.Count} conduits");
                     foreach (ZDOID id in _conduitZDOIDs)
                     {
-                        if (__instance.m_deadZDOs.ContainsKey(id))
-                        {
-                            Jotunn.Logger.LogDebug($"[ZDOManPatches] ZDO already removed");
-                            continue;
-                        }
+                        if (__instance.m_deadZDOs.ContainsKey(id)) continue;
                         ConduitProcessor.QueueConduit(id);
                     }
+                }
+
+                // Log detected containers (OBB is computed client-side)
+                if (_containerZDOIDs.Count > 0)
+                {
+                    Jotunn.Logger.LogDebug($"[ZDOManPatches] Detected {_containerZDOIDs.Count} containers");
                 }
             }
             catch (System.Exception ex)
             {
-                Jotunn.Logger.LogWarning($"[ZDOManPatches] Prefix parse error: {ex.Message}");
+                Jotunn.Logger.LogWarning($"[ZDOManPatches] Postfix parse error: {ex.Message}");
                 _conduitZDOIDs.Clear();
-            }
-            finally
-            {
+                _containerZDOIDs.Clear();
             }
         }
     }

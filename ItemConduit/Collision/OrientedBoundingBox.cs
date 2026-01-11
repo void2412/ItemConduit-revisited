@@ -41,6 +41,17 @@ namespace ItemConduit.Collision
             );
         }
 
+        /// <summary>
+        /// Create OBB from local-space bounds + world position/rotation.
+        /// Used for containers where we have prefab bounds but no BoxCollider.
+        /// </summary>
+        public static OrientedBoundingBox FromBounds(Bounds localBounds, Vector3 position, Quaternion rotation)
+        {
+            // Transform local center to world space
+            var worldCenter = position + rotation * localBounds.center;
+            return new OrientedBoundingBox(worldCenter, rotation, localBounds.extents);
+        }
+
         public string Serialize()
         {
             return $"{Center.x},{Center.y},{Center.z}|" +

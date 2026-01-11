@@ -206,10 +206,12 @@ namespace ItemConduit.Components
             sb.AppendLine($"<color={modeColor}>{Mode}</color>");
             sb.AppendLine($"<color=#00FFFF>ZDOID: {m_nview.GetZDO().m_uid}</color>");
 
-            if (Mode != ConduitMode.Conduit)
+            if (Mode == ConduitMode.Conduit)
             {
                 var hasContainer = !ContainerZDOID.IsNone();
-                sb.AppendLine($"Container: {(hasContainer ? "<color=green>Connected</color>" : "<color=red>None</color>")}");
+				var containerString = hasContainer ? $"<color=green>{ContainerZDOID}</color>" : $"<color=red>None</color>";
+
+				sb.AppendLine($"Container: {containerString}");
             }
 
             var netId = NetworkID;

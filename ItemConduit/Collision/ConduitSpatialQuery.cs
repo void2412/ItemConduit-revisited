@@ -10,25 +10,6 @@ namespace ItemConduit.Collision
         private const float SearchRadius = 5f;
         private const float ContainerSearchRadius = 5f;
 
-        // Container prefab hashes (chest variants)
-        private static readonly HashSet<int> ContainerPrefabHashes = new();
-        private static bool _containerHashesInitialized = false;
-
-        private static void InitContainerHashes()
-        {
-            if (_containerHashesInitialized) return;
-
-            var containerPrefabs = new[] {
-                "piece_chest_wood", "piece_chest", "piece_chest_private",
-                "piece_chest_blackmetal", "piece_chest_treasure"
-            };
-
-            foreach (var prefab in containerPrefabs)
-                ContainerPrefabHashes.Add(prefab.GetStableHashCode());
-
-            _containerHashesInitialized = true;
-        }
-
         /// <summary>
         /// Expand OBB by tolerance on the longest axis for reliable end-to-end collision detection.
         /// </summary>
@@ -94,12 +75,13 @@ namespace ItemConduit.Collision
             return connected;
         }
 
+        /// <summary>
+        /// Find container connected to conduit. Uses raw OBB without tolerance.
+        /// </summary>
         public static ZDOID? FindConnectedContainer(
             OrientedBoundingBox conduitBounds,
             ZDOID _)
         {
-            InitContainerHashes();
-
             var sector = ZoneSystem.GetZone(conduitBounds.Center);
             var zdos = new List<ZDO>();
 
@@ -112,24 +94,32 @@ namespace ItemConduit.Collision
             foreach (var zdo in zdos)
             {
                 var prefabHash = zdo.GetPrefab();
-                if (!ContainerPrefabHashes.Contains(prefabHash))
+                // Use ContainerPrefabs from ZNetScenePatches scan
+                if (!ContainerPrefabs.ContainerPrefabHashes.Contains(prefabHash))
                     continue;
 
                 var dist = Vector3.Distance(conduitBounds.Center, zdo.GetPosition());
                 if (dist > ContainerSearchRadius) continue;
 
-                var containerBounds = new OrientedBoundingBox(
-                    zdo.GetPosition(),
-                    zdo.GetRotation(),
-                    new Vector3(0.5f, 0.5f, 0.5f)
-                );
+                // Get container OBB from ZDO (computed client-side)
+                var containerBoundStr = zdo.GetString(ZDOFields.IC_Bound, "");
+                if (string.IsNullOrEmpty(containerBoundStr))
+                {
+                    Jotunn.Logger.LogDebug($"[SpatialQuery] Container {zdo.m_uid} has no IC_Bound");
+                    continue;
+                }
 
+                var containerBounds = OrientedBoundingBox.Deserialize(containerBoundStr);
+                if (containerBounds.HalfExtents == Vector3.zero) continue;
+
+                // No tolerance for conduit-container collision
                 if (OBBCollision.TestOBBOBB(conduitBounds, containerBounds))
                 {
                     if (dist < closestDistance)
                     {
                         closestDistance = dist;
                         closestContainer = zdo.m_uid;
+                        Jotunn.Logger.LogDebug($"[SpatialQuery] Container {zdo.m_uid} collision detected at dist={dist}");
                     }
                 }
             }
