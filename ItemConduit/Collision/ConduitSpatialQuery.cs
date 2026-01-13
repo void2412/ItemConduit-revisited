@@ -94,8 +94,8 @@ namespace ItemConduit.Collision
             foreach (var zdo in zdos)
             {
                 var prefabHash = zdo.GetPrefab();
-                // Use ContainerPrefabs from ZNetScenePatches scan
-                if (!ContainerPrefabs.ContainerPrefabHashes.Contains(prefabHash))
+                // Use InventorySourceRegistry to detect containers/fireplaces/smelters
+                if (!InventorySourceRegistry.IsInventorySource(prefabHash))
                     continue;
 
                 var dist = Vector3.Distance(conduitBounds.Center, zdo.GetPosition());
@@ -125,6 +125,51 @@ namespace ItemConduit.Collision
             }
 
             return closestContainer;
+        }
+
+        /// <summary>
+        /// Find all conduits whose OBB collides with container OBB.
+        /// Called when container placed to update conduit references.
+        /// </summary>
+        public static List<ZDOID> FindConduitsConnectedToContainer(
+            OrientedBoundingBox containerBounds,
+            ZDOID containerZdoid)
+        {
+            var connected = new List<ZDOID>();
+            var sector = ZoneSystem.GetZone(containerBounds.Center);
+            var zdos = new List<ZDO>();
+
+            ZDOMan.instance.FindSectorObjects(sector, 1, 0, zdos);
+
+            foreach (var zdo in zdos)
+            {
+                // Skip non-conduits
+                if (!ConduitPrefabs.ConduitPrefabHashes.Contains(zdo.GetPrefab()))
+                    continue;
+
+                // Must have conduit mode set
+                var mode = zdo.GetInt(ZDOFields.IC_Mode, -1);
+                if (mode < 0) continue;
+
+                // Distance pre-check
+                var dist = Vector3.Distance(containerBounds.Center, zdo.GetPosition());
+                if (dist > ContainerSearchRadius) continue;
+
+                var boundStr = zdo.GetString(ZDOFields.IC_Bound, "");
+                if (string.IsNullOrEmpty(boundStr)) continue;
+
+                var conduitBounds = OrientedBoundingBox.Deserialize(boundStr);
+                if (conduitBounds.HalfExtents == Vector3.zero) continue;
+
+                // No tolerance for container-conduit collision (mirrors FindConnectedContainer)
+                if (OBBCollision.TestOBBOBB(containerBounds, conduitBounds))
+                {
+                    connected.Add(zdo.m_uid);
+                    Jotunn.Logger.LogDebug($"[SpatialQuery] Conduit {zdo.m_uid} collides with container {containerZdoid}");
+                }
+            }
+
+            return connected;
         }
     }
 }

@@ -16,6 +16,7 @@ namespace ItemConduit.Utils
         public static readonly int IC_Bound = "IC_Bound".GetStableHashCode();
         public static readonly int IC_TransferRate = "IC_TransferRate".GetStableHashCode();
         public static readonly int IC_IsNew = "IC_IsNew".GetStableHashCode();
+        public static readonly int IC_ConnectedConduits = "IC_ConnectedConduits".GetStableHashCode();
     }
 
     public enum ConduitMode

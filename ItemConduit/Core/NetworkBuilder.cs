@@ -61,18 +61,104 @@ namespace ItemConduit.Core
 
         /// <summary>
         /// Detect container via OBB-SAT and assign to conduit ZDO.
+        /// Also updates container's IC_ConnectedConduits list.
         /// </summary>
         public static void DetectAndAssignContainer(ZDO zdo, OrientedBoundingBox bounds, ZDOID zdoid)
         {
-            var container = ConduitSpatialQuery.FindConnectedContainer(bounds, zdoid);
-            if (container.HasValue)
+            var containerId = ConduitSpatialQuery.FindConnectedContainer(bounds, zdoid);
+            if (containerId.HasValue)
             {
-                zdo.Set(ZDOFields.IC_ContainerZDOID, container.Value);
-                Jotunn.Logger.LogInfo($"Conduit {zdoid} linked to container {container.Value}");
+                zdo.Set(ZDOFields.IC_ContainerZDOID, containerId.Value);
+
+                // Update container's connected conduits list
+                var containerZdo = ZDOMan.instance.GetZDO(containerId.Value);
+                if (containerZdo != null)
+                {
+                    var containerConduits = GetContainerConduitList(containerZdo);
+                    if (!containerConduits.Contains(zdoid))
+                    {
+                        containerConduits.Add(zdoid);
+                        SetContainerConduitList(containerZdo, containerConduits);
+                    }
+                }
+
+                Jotunn.Logger.LogInfo($"Conduit {zdoid} linked to container {containerId.Value}");
             }
             else
             {
                 zdo.Set(ZDOFields.IC_ContainerZDOID, ZDOID.None);
+            }
+        }
+
+        /// <summary>
+        /// Called when container placed. Finds conduits and updates bidirectional references.
+        /// Only links conduits that don't already have a container.
+        /// </summary>
+        public static void OnContainerPlaced(ZDO containerZdo, OrientedBoundingBox bounds)
+        {
+            var containerZdoid = containerZdo.m_uid;
+
+            var collidingConduits = ConduitSpatialQuery.FindConduitsConnectedToContainer(bounds, containerZdoid);
+            var linkedConduits = new List<ZDOID>();
+
+            foreach (var conduitId in collidingConduits)
+            {
+                var conduitZdo = ZDOMan.instance.GetZDO(conduitId);
+                if (conduitZdo == null) continue;
+
+                // Only link if conduit has no container yet
+                var existingContainer = conduitZdo.GetZDOID(ZDOFields.IC_ContainerZDOID);
+                if (existingContainer.IsNone())
+                {
+                    conduitZdo.Set(ZDOFields.IC_ContainerZDOID, containerZdoid);
+                    linkedConduits.Add(conduitId);
+                    Jotunn.Logger.LogInfo($"Container {containerZdoid} linked to conduit {conduitId}");
+                }
+            }
+
+            // Only store actually linked conduits (not those already connected to other containers)
+            SetContainerConduitList(containerZdo, linkedConduits);
+
+            Jotunn.Logger.LogDebug($"[NetworkBuilder] OnContainerPlaced {containerZdoid}: {collidingConduits.Count} colliding, {linkedConduits.Count} linked");
+        }
+
+        /// <summary>
+        /// Called when container removed. Clears IC_ContainerZDOID from linked conduits,
+        /// then re-detects containers for orphaned conduits (may link to other nearby containers).
+        /// </summary>
+        public static void OnContainerRemoved(CachedContainerData cached)
+        {
+            var containerZdoid = cached.Zdoid;
+
+            // First pass: clear container refs and collect orphaned conduit IDs
+            var orphanedConduitIds = new List<ZDOID>();
+            foreach (var conduitId in cached.ConnectedConduits)
+            {
+                var conduitZdo = ZDOMan.instance.GetZDO(conduitId);
+                if (conduitZdo == null) continue;
+
+                var linkedContainer = conduitZdo.GetZDOID(ZDOFields.IC_ContainerZDOID);
+                if (linkedContainer == containerZdoid)
+                {
+                    conduitZdo.Set(ZDOFields.IC_ContainerZDOID, ZDOID.None);
+                    orphanedConduitIds.Add(conduitId);
+                    Jotunn.Logger.LogDebug($"[NetworkBuilder] Cleared container ref from conduit {conduitId}");
+                }
+            }
+
+            Jotunn.Logger.LogDebug($"[NetworkBuilder] OnContainerRemoved {containerZdoid}: cleared {orphanedConduitIds.Count} conduit references");
+
+            // Second pass: re-detect containers for orphaned conduits
+            foreach (var conduitId in orphanedConduitIds)
+            {
+                var conduitZdo = ZDOMan.instance.GetZDO(conduitId);
+                if (conduitZdo == null) continue;
+
+                var boundStr = conduitZdo.GetString(ZDOFields.IC_Bound, "");
+                if (string.IsNullOrEmpty(boundStr)) continue;
+
+                var bounds = OrientedBoundingBox.Deserialize(boundStr);
+                DetectAndAssignContainer(conduitZdo, bounds, conduitId);
             }
         }
 
@@ -103,6 +189,21 @@ namespace ItemConduit.Core
 
                 SetConnectionList(connZdo, existingConns);
                 Jotunn.Logger.LogDebug($"[NetworkBuilder] Updated neighbor {connId}: now {existingConns.Count} connections");
+            }
+
+            // Remove from container's IC_ConnectedConduits if linked
+            var containerZdoid = cached.ContainerZdoid;
+            if (!containerZdoid.IsNone())
+            {
+                var containerZdo = ZDOMan.instance.GetZDO(containerZdoid);
+                if (containerZdo != null)
+                {
+                    var containerConduits = GetContainerConduitList(containerZdo)
+                        .Where(z => z != zdoid)
+                        .ToList();
+                    SetContainerConduitList(containerZdo, containerConduits);
+                    Jotunn.Logger.LogDebug($"[NetworkBuilder] Removed conduit {zdoid} from container {containerZdoid} connections");
+                }
             }
         }
 
@@ -156,6 +257,33 @@ namespace ItemConduit.Core
             foreach (var z in connections)
                 pkg.Write(z);
             zdo.Set(ZDOFields.IC_ConnectionList, pkg.GetArray());
+        }
+
+        #endregion
+
+        #region Container Conduit List Helpers
+
+        public static List<ZDOID> GetContainerConduitList(ZDO zdo)
+        {
+            var bytes = zdo.GetByteArray(ZDOFields.IC_ConnectedConduits, null);
+            if (bytes == null || bytes.Length == 0) return new List<ZDOID>();
+
+            var pkg = new ZPackage(bytes);
+            var count = pkg.ReadInt();
+            var list = new List<ZDOID>(count);
+            for (int i = 0; i < count; i++)
+                list.Add(pkg.ReadZDOID());
+            return list;
+        }
+
+        public static void SetContainerConduitList(ZDO zdo, List<ZDOID> conduits)
+        {
+            var pkg = new ZPackage();
+            pkg.Write(conduits.Count);
+            foreach (var z in conduits)
+                pkg.Write(z);
+            zdo.Set(ZDOFields.IC_ConnectedConduits, pkg.GetArray());
+            Jotunn.Logger.LogDebug($"[NetworkBuilder] SetContainerConduitList {zdo.m_uid}: wrote {conduits.Count} conduits, bytes={pkg.GetArray().Length}");
         }
 
         #endregion

@@ -1,14 +1,14 @@
 using HarmonyLib;
-using ItemConduit.Collision;
 using ItemConduit.Components;
+using ItemConduit.Core;
 using ItemConduit.GUI;
-using ItemConduit.Utils;
 using UnityEngine;
+using System.Text;
 
 namespace ItemConduit.Patches
 {
     /// <summary>
-    /// Patch Container to compute and store OBB in ZDO on client.
+    /// Patch Container to add IContainerInterface component and compute OBB.
     /// Server reads IC_Bound from ZDO for collision detection.
     /// </summary>
     [HarmonyPatch(typeof(Container), nameof(Container.Awake))]
@@ -24,51 +24,31 @@ namespace ItemConduit.Patches
             var zdo = nview.GetZDO();
             if (zdo == null) return;
 
-            // Check if OBB already stored
-            var existingBound = zdo.GetString(ZDOFields.IC_Bound, "");
-            if (!string.IsNullOrEmpty(existingBound))
+            // Add IContainerInterface component if not already present
+            var containerInterface = __instance.GetComponent<ContainerInterfaceComponent>();
+            if (containerInterface == null)
             {
-                // Already stored, just register for wireframe
-                ICGUIManager.Instance?.RegisterContainer(__instance);
-                return;
+                containerInterface = __instance.gameObject.AddComponent<ContainerInterfaceComponent>();
             }
 
-            // Compute OBB from MeshCollider bounds (preferred) or MeshFilter
-            Bounds? localBounds = null;
-
-            var meshCollider = __instance.GetComponentInChildren<MeshCollider>();
-            if (meshCollider != null && meshCollider.sharedMesh != null)
+            // Store OBB to ZDO using the interface
+            if (containerInterface.TryStoreOBB())
             {
-				Jotunn.Logger.LogDebug($"[ContainerPatches] Mesh Collider found");
-                localBounds = meshCollider.sharedMesh.bounds;
-            }
-            else
-            {
-                var meshFilter = __instance.GetComponentInChildren<MeshFilter>();
-                if (meshFilter != null && meshFilter.sharedMesh != null)
-                {
-					Jotunn.Logger.LogDebug($"[ContainerPatches] Mesh Filter found");
-					localBounds = meshFilter.sharedMesh.bounds;
-                }
-            }
-
-            if (localBounds.HasValue)
-            {
-                var obb = OrientedBoundingBox.FromBounds(
-                    localBounds.Value,
-                    __instance.transform.position,
-                    __instance.transform.rotation
-                );
-                zdo.Set(ZDOFields.IC_Bound, obb.Serialize());
                 Jotunn.Logger.LogDebug($"[ContainerPatches] Stored OBB for {__instance.name}");
 
-                // Register for wireframe visualization
-                ICGUIManager.Instance?.RegisterContainer(__instance);
+                // Queue for local processing on host/singleplayer
+                if (ZNet.instance?.IsServer() == true)
+                {
+                    ConduitProcessor.QueueContainer(zdo.m_uid);
+                }
             }
             else
             {
-                Jotunn.Logger.LogWarning($"[ContainerPatches] No MeshCollider or MeshFilter for {__instance.name}");
+                Jotunn.Logger.LogWarning($"[ContainerPatches] Failed to compute OBB for {__instance.name}");
             }
+
+            // Register for wireframe visualization
+            ICGUIManager.Instance?.RegisterContainer(__instance);
         }
     }
 
@@ -83,6 +63,26 @@ namespace ItemConduit.Patches
         {
 			Jotunn.Logger.LogDebug($"Container Destroyed, Unregistering from GUI manager");
             ICGUIManager.Instance?.UnregisterContainer(__instance);
+        }
+    }
+
+    /// <summary>
+    /// Patch Container.GetHoverText to append ItemConduit info.
+    /// </summary>
+    [HarmonyPatch(typeof(Container), nameof(Container.GetHoverText))]
+    public static class ContainerGetHoverTextPatch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(Container __instance, ref string __result)
+        {
+            var containerInterface = __instance.GetComponent<ContainerInterfaceComponent>();
+            if (containerInterface == null) return;
+
+            var extraText = containerInterface.GetHoverText();
+            if (!string.IsNullOrEmpty(extraText))
+            {
+                __result = __result + "\n" + extraText;
+            }
         }
     }
 }

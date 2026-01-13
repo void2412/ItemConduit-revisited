@@ -12,62 +12,49 @@ namespace ItemConduit.Patches
         [HarmonyPostfix]
         public static void Postfix(ZNetScene __instance)
         {
-            // Scan prefabs for Container components
-            ScanContainerPrefabs(__instance);
+            // Scan prefabs for inventory source components
+            ScanInventorySourcePrefabs(__instance);
 
             // Delay rebuild to ensure all prefabs are registered
             __instance.StartCoroutine(DelayedRebuild());
         }
 
-        private static void ScanContainerPrefabs(ZNetScene scene)
+        private static void ScanInventorySourcePrefabs(ZNetScene scene)
         {
-            ContainerPrefabs.Clear();
+            InventorySourceRegistry.Clear();
 
             foreach (var kvp in scene.m_namedPrefabs)
             {
                 var prefab = kvp.Value;
                 if (prefab == null) continue;
 
-                var container = prefab.GetComponent<Container>();
-                if (container == null) continue;
-
                 int prefabHash = kvp.Key;
-                ContainerPrefabs.ContainerPrefabHashes.Add(prefabHash);
 
-                // Store dimensions from Container component
-                ContainerPrefabs.ContainerDimensions[prefabHash] = new ContainerDimensions(
-                    container.m_width,
-                    container.m_height
-                );
+                // Check for Container component
+                var container = prefab.GetComponent<Container>();
+                if (container != null)
+                {
+                    RegisterContainerPrefab(prefab, prefabHash, container);
+                    continue;
+                }
 
-                // Extract bounds from MeshFilter for OBB
-                var meshFilter = prefab.GetComponentInChildren<MeshFilter>();
-                if (meshFilter != null && meshFilter.sharedMesh != null)
-                {
-                    ContainerPrefabs.ContainerBounds[prefabHash] = meshFilter.sharedMesh.bounds;
-                    Jotunn.Logger.LogDebug($"[ContainerPrefabs] {prefab.name}: {container.m_width}x{container.m_height}, bounds={meshFilter.sharedMesh.bounds}");
-                }
-                else
-                {
-                    // Fallback: try MeshCollider
-                    var meshCollider = prefab.GetComponentInChildren<MeshCollider>();
-                    if (meshCollider != null && meshCollider.sharedMesh != null)
-                    {
-                        ContainerPrefabs.ContainerBounds[prefabHash] = meshCollider.sharedMesh.bounds;
-                    }
-                    else
-                    {
-                        // Last fallback: BoxCollider
-                        var boxCollider = prefab.GetComponentInChildren<BoxCollider>();
-                        if (boxCollider != null)
-                        {
-                            ContainerPrefabs.ContainerBounds[prefabHash] = new Bounds(boxCollider.center, boxCollider.size);
-                        }
-                    }
-                }
+                // Future: Check for Fireplace component
+                // var fireplace = prefab.GetComponent<Fireplace>();
+                // if (fireplace != null) { RegisterFireplacePrefab(...); continue; }
+
+                // Future: Check for Smelter component
+                // var smelter = prefab.GetComponent<Smelter>();
+                // if (smelter != null) { RegisterSmelterPrefab(...); continue; }
             }
 
-            Jotunn.Logger.LogInfo($"[ContainerPrefabs] Registered {ContainerPrefabs.ContainerPrefabHashes.Count} container prefabs");
+            Jotunn.Logger.LogInfo($"[InventorySourceRegistry] Registered {InventorySourceRegistry.AllPrefabHashes.Count} inventory sources");
+        }
+
+        private static void RegisterContainerPrefab(GameObject prefab, int prefabHash, Container container)
+        {
+            // Register container prefab - OBB bounds computed at runtime by ContainerInterfaceComponent
+            InventorySourceRegistry.RegisterContainer(prefabHash, container.m_width, container.m_height);
+            Jotunn.Logger.LogDebug($"[InventorySourceRegistry] Container {prefab.name}: {container.m_width}x{container.m_height}");
         }
 
         private static IEnumerator DelayedRebuild()

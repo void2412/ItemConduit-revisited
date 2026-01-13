@@ -6,14 +6,14 @@ using ItemConduit.Core;
 namespace ItemConduit.Patches
 {
     /// <summary>
-    /// Patch ZDOMan.RPC_ZDOData to detect conduit and container ZDOs during network sync.
+    /// Patch ZDOMan.RPC_ZDOData to detect conduit and inventory source ZDOs during network sync.
     /// Postfix processes after ZDO.Deserialize so prefab hash is available.
     /// </summary>
     [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.RPC_ZDOData))]
     public static class ZDOManPatches
     {
         private static HashSet<ZDOID> _conduitZDOIDs = new HashSet<ZDOID>();
-        private static HashSet<ZDOID> _containerZDOIDs = new HashSet<ZDOID>();
+        private static HashSet<ZDOID> _inventorySourceZDOIDs = new HashSet<ZDOID>();
 
         private static int originalPos;
 
@@ -36,7 +36,7 @@ namespace ItemConduit.Patches
             try
             {
                 _conduitZDOIDs.Clear();
-                _containerZDOIDs.Clear();
+                _inventorySourceZDOIDs.Clear();
                 pkg.SetPos(originalPos);
                 int num2 = pkg.ReadInt();
                 for (int i = 0; i < num2; i++)
@@ -70,11 +70,11 @@ namespace ItemConduit.Patches
                         Jotunn.Logger.LogDebug($"[ZDOManPatches] Found conduit {zdoid} from Zpackage");
                         _conduitZDOIDs.Add(zdoid);
                     }
-                    // Check if container
-                    else if (ContainerPrefabs.ContainerPrefabHashes.Contains(prefabHash))
+                    // Check if inventory source (Container, Fireplace, Smelter, etc)
+                    else if (InventorySourceRegistry.IsInventorySource(prefabHash))
                     {
-                        Jotunn.Logger.LogDebug($"[ZDOManPatches] Found container {zdoid} from Zpackage");
-                        _containerZDOIDs.Add(zdoid);
+                        Jotunn.Logger.LogDebug($"[ZDOManPatches] Found inventory source {zdoid} from Zpackage");
+                        _inventorySourceZDOIDs.Add(zdoid);
                     }
                 }
 
@@ -91,24 +91,29 @@ namespace ItemConduit.Patches
                     }
                 }
 
-                // Log detected containers (OBB is computed client-side)
-                if (_containerZDOIDs.Count > 0)
+                // Queue inventory sources for server-side conduit detection
+                if (_inventorySourceZDOIDs.Count > 0)
                 {
-                    Jotunn.Logger.LogDebug($"[ZDOManPatches] Detected {_containerZDOIDs.Count} containers");
+                    Jotunn.Logger.LogDebug($"[ZDOManPatches] Queueing {_inventorySourceZDOIDs.Count} inventory sources");
+                    foreach (ZDOID id in _inventorySourceZDOIDs)
+                    {
+                        if (__instance.m_deadZDOs.ContainsKey(id)) continue;
+                        ConduitProcessor.QueueContainer(id);
+                    }
                 }
             }
             catch (System.Exception ex)
             {
                 Jotunn.Logger.LogWarning($"[ZDOManPatches] Postfix parse error: {ex.Message}");
                 _conduitZDOIDs.Clear();
-                _containerZDOIDs.Clear();
+                _inventorySourceZDOIDs.Clear();
             }
         }
     }
 
     /// <summary>
-    /// Patch HandleDestroyedZDO to detect conduit removal on dedicated server.
-    /// ZDO still exists in prefix, so we can check prefab hash.
+    /// Patch HandleDestroyedZDO to detect conduit and inventory source removal on dedicated server.
+    /// ZDO still exists in prefix, so we can check prefab hash and cache data.
     /// </summary>
     [HarmonyPatch(typeof(ZDOMan), nameof(ZDOMan.HandleDestroyedZDO))]
     public static class HandleDestroyedZDOPatch
@@ -121,11 +126,22 @@ namespace ItemConduit.Patches
             var zdo = __instance.GetZDO(uid);
             if (zdo == null) return;
 
-            if (ConduitPrefabs.ConduitPrefabHashes.Contains(zdo.GetPrefab()))
+            var prefabHash = zdo.GetPrefab();
+
+            // Check if conduit
+            if (ConduitPrefabs.ConduitPrefabHashes.Contains(prefabHash))
             {
                 Jotunn.Logger.LogDebug($"[HandleDestroyedZDO] Conduit {uid} destroyed, caching data for removal");
                 // Pass ZDO so data can be cached before destruction
                 ConduitProcessor.QueueConduitRemoval(zdo);
+            }
+            // Check if inventory source (Container, Fireplace, Smelter, etc)
+            else if (InventorySourceRegistry.IsInventorySource(prefabHash))
+            {
+                // Cache connected conduits list before ZDO destroyed
+                var connectedConduits = NetworkBuilder.GetContainerConduitList(zdo);
+                Jotunn.Logger.LogDebug($"[HandleDestroyedZDO] Inventory source {uid} destroyed, {connectedConduits.Count} linked conduits");
+                ConduitProcessor.QueueContainerRemoval(uid, connectedConduits);
             }
         }
     }
