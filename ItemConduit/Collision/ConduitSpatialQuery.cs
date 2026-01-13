@@ -26,11 +26,11 @@ namespace ItemConduit.Collision
             return new OrientedBoundingBox(obb.Center, obb.Rotation, halfExtents);
         }
 
-        public static List<ZDOID> FindConnectedConduits(
+        public static HashSet<ZDOID> FindConnectedConduits(
             OrientedBoundingBox sourceBounds,
             ZDOID sourceId)
         {
-            var connected = new List<ZDOID>();
+            var connected = new HashSet<ZDOID>();
             var sector = ZoneSystem.GetZone(sourceBounds.Center);
             var zdos = new List<ZDO>();
 
@@ -131,11 +131,11 @@ namespace ItemConduit.Collision
         /// Find all conduits whose OBB collides with container OBB.
         /// Called when container placed to update conduit references.
         /// </summary>
-        public static List<ZDOID> FindConduitsConnectedToContainer(
+        public static HashSet<ZDOID> FindConduitsConnectedToContainer(
             OrientedBoundingBox containerBounds,
             ZDOID containerZdoid)
         {
-            var connected = new List<ZDOID>();
+            var connected = new HashSet<ZDOID>();
             var sector = ZoneSystem.GetZone(containerBounds.Center);
             var zdos = new List<ZDO>();
 

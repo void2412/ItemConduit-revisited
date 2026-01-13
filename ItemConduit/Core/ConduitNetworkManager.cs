@@ -12,7 +12,7 @@ namespace ItemConduit.Core
         private readonly Dictionary<string, ConduitNetwork> _networks = new();
         private readonly Dictionary<ZDOID, string> _conduitToNetwork = new();
 
-        public void RegisterConduit(ZDOID zdoid, ConduitMode mode, List<ZDOID> connections, bool isNewPlacement = false)
+        public void RegisterConduit(ZDOID zdoid, ConduitMode mode, HashSet<ZDOID> connections, bool isNewPlacement = false)
         {
             // For existing conduits (world load), check if already has network ID
             var zdo = ZDOMan.instance.GetZDO(zdoid);
@@ -156,7 +156,7 @@ namespace ItemConduit.Core
         /// BFS from neighbors of removed conduit to detect disconnected subgraphs.
         /// Optimized: Larger component keeps original network ID to minimize ZDO syncs.
         /// </summary>
-        private void CheckNetworkSplit(string networkId, ZDOID removedConduit, List<ZDOID> neighbors)
+        private void CheckNetworkSplit(string networkId, ZDOID removedConduit, HashSet<ZDOID> neighbors)
         {
             if (neighbors.Count <= 1)
                 return; // No split possible with 0-1 neighbors

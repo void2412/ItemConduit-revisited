@@ -27,6 +27,10 @@ namespace ItemConduit.Components
 
         public int PrefabHash => Zdo?.GetPrefab() ?? 0;
 
+        public Transform Transform => transform;
+
+        public string Name => _container != null ? _container.name : gameObject.name;
+
         private void Awake()
         {
             _container = GetComponent<Container>();

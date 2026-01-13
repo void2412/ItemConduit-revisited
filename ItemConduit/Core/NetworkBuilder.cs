@@ -74,10 +74,9 @@ namespace ItemConduit.Core
                 var containerZdo = ZDOMan.instance.GetZDO(containerId.Value);
                 if (containerZdo != null)
                 {
-                    var containerConduits = GetContainerConduitList(containerZdo);
-                    if (!containerConduits.Contains(zdoid))
+                    var containerConduits = new HashSet<ZDOID>(GetContainerConduitList(containerZdo));
+                    if (containerConduits.Add(zdoid))
                     {
-                        containerConduits.Add(zdoid);
                         SetContainerConduitList(containerZdo, containerConduits);
                     }
                 }
@@ -99,7 +98,7 @@ namespace ItemConduit.Core
             var containerZdoid = containerZdo.m_uid;
 
             var collidingConduits = ConduitSpatialQuery.FindConduitsConnectedToContainer(bounds, containerZdoid);
-            var linkedConduits = new List<ZDOID>();
+            var linkedConduits = new HashSet<ZDOID>();
 
             foreach (var conduitId in collidingConduits)
             {
@@ -183,10 +182,8 @@ namespace ItemConduit.Core
                 var connZdo = ZDOMan.instance.GetZDO(connId);
                 if (connZdo == null) continue;
 
-                var existingConns = GetConnectionList(connZdo)
-                    .Where(z => z != zdoid)
-                    .ToList();
-
+                var existingConns = GetConnectionList(connZdo);
+                existingConns.Remove(zdoid);
                 SetConnectionList(connZdo, existingConns);
                 Jotunn.Logger.LogDebug($"[NetworkBuilder] Updated neighbor {connId}: now {existingConns.Count} connections");
             }
@@ -198,9 +195,8 @@ namespace ItemConduit.Core
                 var containerZdo = ZDOMan.instance.GetZDO(containerZdoid);
                 if (containerZdo != null)
                 {
-                    var containerConduits = GetContainerConduitList(containerZdo)
-                        .Where(z => z != zdoid)
-                        .ToList();
+                    var containerConduits = new HashSet<ZDOID>(GetContainerConduitList(containerZdo));
+                    containerConduits.Remove(zdoid);
                     SetContainerConduitList(containerZdo, containerConduits);
                     Jotunn.Logger.LogDebug($"[NetworkBuilder] Removed conduit {zdoid} from container {containerZdoid} connections");
                 }
@@ -237,20 +233,20 @@ namespace ItemConduit.Core
 
         #region ZPackage Connection List Helpers
 
-        public static List<ZDOID> GetConnectionList(ZDO zdo)
+        public static HashSet<ZDOID> GetConnectionList(ZDO zdo)
         {
             var bytes = zdo.GetByteArray(ZDOFields.IC_ConnectionList, null);
-            if (bytes == null || bytes.Length == 0) return new List<ZDOID>();
+            if (bytes == null || bytes.Length == 0) return new HashSet<ZDOID>();
 
             var pkg = new ZPackage(bytes);
             var count = pkg.ReadInt();
-            var list = new List<ZDOID>(count);
+            var set = new HashSet<ZDOID>();
             for (int i = 0; i < count; i++)
-                list.Add(pkg.ReadZDOID());
-            return list;
+                set.Add(pkg.ReadZDOID());
+            return set;
         }
 
-        public static void SetConnectionList(ZDO zdo, List<ZDOID> connections)
+        public static void SetConnectionList(ZDO zdo, HashSet<ZDOID> connections)
         {
             var pkg = new ZPackage();
             pkg.Write(connections.Count);
@@ -263,27 +259,27 @@ namespace ItemConduit.Core
 
         #region Container Conduit List Helpers
 
-        public static List<ZDOID> GetContainerConduitList(ZDO zdo)
+        public static HashSet<ZDOID> GetContainerConduitList(ZDO zdo)
         {
             var bytes = zdo.GetByteArray(ZDOFields.IC_ConnectedConduits, null);
-            if (bytes == null || bytes.Length == 0) return new List<ZDOID>();
+            if (bytes == null || bytes.Length == 0) return new HashSet<ZDOID>();
 
             var pkg = new ZPackage(bytes);
             var count = pkg.ReadInt();
-            var list = new List<ZDOID>(count);
+            var set = new HashSet<ZDOID>();
             for (int i = 0; i < count; i++)
-                list.Add(pkg.ReadZDOID());
-            return list;
+                set.Add(pkg.ReadZDOID());
+            return set;
         }
 
-        public static void SetContainerConduitList(ZDO zdo, List<ZDOID> conduits)
+        public static void SetContainerConduitList(ZDO zdo, HashSet<ZDOID> conduits)
         {
             var pkg = new ZPackage();
             pkg.Write(conduits.Count);
             foreach (var z in conduits)
                 pkg.Write(z);
             zdo.Set(ZDOFields.IC_ConnectedConduits, pkg.GetArray());
-            Jotunn.Logger.LogDebug($"[NetworkBuilder] SetContainerConduitList {zdo.m_uid}: wrote {conduits.Count} conduits, bytes={pkg.GetArray().Length}");
+            Jotunn.Logger.LogDebug($"[NetworkBuilder] SetContainerConduitList {zdo.m_uid}: wrote {conduits.Count} conduits");
         }
 
         #endregion

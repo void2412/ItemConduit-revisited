@@ -14,9 +14,9 @@ namespace ItemConduit.GUI
         private bool _wireframeEnabled = false;
         private static Material _lineMaterial;
         private readonly Dictionary<Conduit, GameObject> _conduitWireframes = new();
-        private readonly Dictionary<Container, GameObject> _containerWireframes = new();
+        private readonly Dictionary<IContainerInterface, GameObject> _containerWireframes = new();
         private readonly HashSet<Conduit> _registeredConduits = new();
-        private readonly HashSet<Container> _registeredContainers = new();
+        private readonly HashSet<IContainerInterface> _registeredContainers = new();
 
         private void Awake()
         {
@@ -75,7 +75,7 @@ namespace ItemConduit.GUI
         /// <summary>
         /// Called by ContainerPatches after OBB is stored to register for wireframe visualization.
         /// </summary>
-        public void RegisterContainer(Container container)
+        public void RegisterContainer(IContainerInterface container)
         {
             if (container == null) return;
             _registeredContainers.Add(container);
@@ -85,7 +85,7 @@ namespace ItemConduit.GUI
         /// <summary>
         /// Called when container is destroyed to unregister.
         /// </summary>
-        public void UnregisterContainer(Container container)
+        public void UnregisterContainer(IContainerInterface container)
         {
             if (container == null) return;
             _registeredContainers.Remove(container);
@@ -97,14 +97,13 @@ namespace ItemConduit.GUI
             }
         }
 
-        private void CreateContainerWireframe(Container container)
+        private void CreateContainerWireframe(IContainerInterface container)
         {
             if (_containerWireframes.ContainsKey(container)) return;
 
-            var nview = container.m_nview;
-            if (nview == null || !nview.IsValid()) return;
+            if (!container.IsValid) return;
 
-            var zdo = nview.GetZDO();
+            var zdo = container.Zdo;
             if (zdo == null) return;
 
             var obbStr = zdo.GetString(Utils.ZDOFields.IC_Bound, "");
@@ -113,8 +112,8 @@ namespace ItemConduit.GUI
             var obb = Collision.OrientedBoundingBox.Deserialize(obbStr);
             if (obb.HalfExtents == Vector3.zero) return;
 
-            var wireframeObj = new GameObject($"ContainerWireframe_{container.name}");
-            wireframeObj.transform.SetParent(container.transform, false);
+            var wireframeObj = new GameObject($"ContainerWireframe_{container.Name}");
+            wireframeObj.transform.SetParent(container.Transform, false);
 
             // Container OBB wireframe (cyan) - 12 edges
             var renderers = CreateEdgeRenderers(wireframeObj.transform, "Edge", Color.cyan, 0.02f);

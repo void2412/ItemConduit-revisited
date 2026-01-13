@@ -37,7 +37,7 @@ namespace ItemConduit.Patches
                 Jotunn.Logger.LogDebug($"[ContainerPatches] Stored OBB for {__instance.name}");
 
                 // Queue for local processing on host/singleplayer
-                if (ZNet.instance?.IsServer() == true)
+                if (ZNet.instance?.IsServer() == true && ZNet.instance?.IsDedicated() == false)
                 {
                     ConduitProcessor.QueueContainer(zdo.m_uid);
                 }
@@ -48,7 +48,7 @@ namespace ItemConduit.Patches
             }
 
             // Register for wireframe visualization
-            ICGUIManager.Instance?.RegisterContainer(__instance);
+            ICGUIManager.Instance?.RegisterContainer(containerInterface);
         }
     }
 
@@ -61,8 +61,12 @@ namespace ItemConduit.Patches
         [HarmonyPrefix]
         public static void Prefix(Container __instance)
         {
-			Jotunn.Logger.LogDebug($"Container Destroyed, Unregistering from GUI manager");
-            ICGUIManager.Instance?.UnregisterContainer(__instance);
+            Jotunn.Logger.LogDebug($"Container Destroyed, Unregistering from GUI manager");
+            var containerInterface = __instance.GetComponent<ContainerInterfaceComponent>();
+            if (containerInterface != null)
+            {
+                ICGUIManager.Instance?.UnregisterContainer(containerInterface);
+            }
         }
     }
 

@@ -10,7 +10,7 @@ namespace ItemConduit.Core
     public class CachedConduitData
     {
         public ZDOID Zdoid { get; set; }
-        public List<ZDOID> Connections { get; set; }
+        public HashSet<ZDOID> Connections { get; set; }
         public ConduitMode Mode { get; set; }
         public string NetworkID { get; set; }
         public ZDOID ContainerZdoid { get; set; }
@@ -22,9 +22,9 @@ namespace ItemConduit.Core
     public class CachedContainerData
     {
         public ZDOID Zdoid { get; }
-        public List<ZDOID> ConnectedConduits { get; }
+        public HashSet<ZDOID> ConnectedConduits { get; }
 
-        public CachedContainerData(ZDOID zdoid, List<ZDOID> connectedConduits)
+        public CachedContainerData(ZDOID zdoid, HashSet<ZDOID> connectedConduits)
         {
             Zdoid = zdoid;
             ConnectedConduits = connectedConduits;
@@ -89,7 +89,7 @@ namespace ItemConduit.Core
         /// <summary>
         /// Queue container removal with connected conduits list.
         /// </summary>
-        public static void QueueContainerRemoval(ZDOID containerZdoid, List<ZDOID> connectedConduits)
+        public static void QueueContainerRemoval(ZDOID containerZdoid, HashSet<ZDOID> connectedConduits)
         {
             if (containerZdoid.IsNone()) return;
             _pendingContainerRemovals[containerZdoid] = new CachedContainerData(containerZdoid, connectedConduits);

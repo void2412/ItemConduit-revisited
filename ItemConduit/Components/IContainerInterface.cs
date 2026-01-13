@@ -34,6 +34,16 @@ namespace ItemConduit.Components
         int PrefabHash { get; }
 
         /// <summary>
+        /// Transform for parenting wireframes and getting position.
+        /// </summary>
+        UnityEngine.Transform Transform { get; }
+
+        /// <summary>
+        /// Display name for debugging/UI.
+        /// </summary>
+        string Name { get; }
+
+        /// <summary>
         /// Compute the OBB bounds for this container in world space.
         /// </summary>
         Collision.OrientedBoundingBox? ComputeBounds();
