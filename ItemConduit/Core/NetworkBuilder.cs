@@ -311,6 +311,7 @@ namespace ItemConduit.Core
             if (removedCount > 0)
             {
                 SetContainerConduitList(zdo, set);
+				removedCount = 0;
                 Jotunn.Logger.LogDebug($"[NetworkBuilder] Cleaned {removedCount} stale conduit refs from container {zdo.m_uid}");
             }
 
