@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using HarmonyLib;
 using ItemConduit.Components;
 using ItemConduit.Core;
+using ItemConduit.Utils;
 
 namespace ItemConduit.Patches
 {

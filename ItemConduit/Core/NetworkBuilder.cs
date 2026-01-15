@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using ItemConduit.Collision;
+using ItemConduit.Components;
 using ItemConduit.Utils;
 
 namespace ItemConduit.Core
@@ -65,6 +66,15 @@ namespace ItemConduit.Core
         /// </summary>
         public static void DetectAndAssignContainer(ZDO zdo, OrientedBoundingBox bounds, ZDOID zdoid)
         {
+            // Safety check: only process actual conduits
+            var prefabHash = zdo.GetPrefab();
+            if (!ConduitPrefabs.ConduitPrefabHashes.Contains(prefabHash))
+            {
+                var prefabName = ZNetScene.instance?.GetPrefab(prefabHash)?.name ?? "unknown";
+                Jotunn.Logger.LogWarning($"[DetectAndAssignContainer] BLOCKED non-conduit {zdoid} prefab={prefabHash} ({prefabName})");
+                return;
+            }
+
             var containerId = ConduitSpatialQuery.FindConnectedContainer(bounds, zdoid);
             if (containerId.HasValue)
             {
@@ -78,6 +88,7 @@ namespace ItemConduit.Core
                     if (containerConduits.Add(zdoid))
                     {
                         SetContainerConduitList(containerZdo, containerConduits);
+                        Jotunn.Logger.LogInfo($"[DetectAndAssignContainer] Added conduit {zdoid} to container {containerId.Value}");
                     }
                 }
 
@@ -266,9 +277,43 @@ namespace ItemConduit.Core
 
             var pkg = new ZPackage(bytes);
             var count = pkg.ReadInt();
+            Jotunn.Logger.LogInfo($"[GetContainerConduitList] Container {zdo.m_uid} has {count} stored conduit entries");
+
             var set = new HashSet<ZDOID>();
+            var removedCount = 0;
+            var zdoMan = ZDOMan.instance;
+
             for (int i = 0; i < count; i++)
-                set.Add(pkg.ReadZDOID());
+            {
+                var zdoid = pkg.ReadZDOID();
+                // Validate ZDOID still exists AND is not in dead list (lazy cleanup for destroyed conduits)
+                var conduitZdo = zdoMan?.GetZDO(zdoid);
+                var isDead = zdoMan?.m_deadZDOs?.ContainsKey(zdoid) ?? false;
+                var prefabHash = conduitZdo?.GetPrefab() ?? 0;
+                var isConduitPrefab = ConduitPrefabs.ConduitPrefabHashes.Contains(prefabHash);
+                var prefabName = ZNetScene.instance?.GetPrefab(prefabHash)?.name ?? "unknown";
+
+                Jotunn.Logger.LogInfo($"[GetContainerConduitList] ZDOID {zdoid}: exists={conduitZdo != null}, dead={isDead}, prefab={prefabHash} ({prefabName}), isConduit={isConduitPrefab}");
+
+                // Valid if: ZDO exists, not dead, AND is actually a conduit prefab
+                if (conduitZdo != null && !isDead && isConduitPrefab)
+                {
+                    set.Add(zdoid);
+                }
+                else
+                {
+                    removedCount++;
+                    Jotunn.Logger.LogWarning($"[GetContainerConduitList] REMOVING invalid ZDOID {zdoid} (exists={conduitZdo != null}, dead={isDead}, isConduit={isConduitPrefab})");
+                }
+            }
+
+            // If stale entries found, update the ZDO to persist cleanup
+            if (removedCount > 0)
+            {
+                SetContainerConduitList(zdo, set);
+                Jotunn.Logger.LogDebug($"[NetworkBuilder] Cleaned {removedCount} stale conduit refs from container {zdo.m_uid}");
+            }
+
             return set;
         }
 
