@@ -83,19 +83,37 @@ copy_files() {
         mkdir -p "$dest"
     fi
 
+    local failed=0
+
     if [ -f "$DLL_FILE" ]; then
-        cp "$DLL_FILE" "$dest/"
-        echo "  $name: Copied $MOD_NAME.dll"
+        if cp "$DLL_FILE" "$dest/" 2>/dev/null; then
+            echo "  $name: Copied $MOD_NAME.dll"
+        else
+            echo "  $name: Failed to copy $MOD_NAME.dll (permission denied?)"
+            failed=1
+        fi
     fi
 
     if [ -f "$PDB_FILE" ]; then
-        cp "$PDB_FILE" "$dest/"
-        echo "  $name: Copied $MOD_NAME.pdb"
+        if cp "$PDB_FILE" "$dest/" 2>/dev/null; then
+            echo "  $name: Copied $MOD_NAME.pdb"
+        else
+            echo "  $name: Failed to copy $MOD_NAME.pdb (permission denied?)"
+            failed=1
+        fi
     fi
 
     if [ -f "$MDB_FILE" ]; then
-        cp "$MDB_FILE" "$dest/"
-        echo "  $name: Copied $MOD_NAME.dll.mdb"
+        if cp "$MDB_FILE" "$dest/" 2>/dev/null; then
+            echo "  $name: Copied $MOD_NAME.dll.mdb"
+        else
+            echo "  $name: Failed to copy $MOD_NAME.dll.mdb (permission denied?)"
+            failed=1
+        fi
+    fi
+
+    if [ $failed -eq 1 ]; then
+        echo "  $name: Some files failed to copy"
     fi
 }
 
