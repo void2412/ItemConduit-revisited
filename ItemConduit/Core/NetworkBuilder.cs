@@ -311,8 +311,7 @@ namespace ItemConduit.Core
             if (removedCount > 0)
             {
                 SetContainerConduitList(zdo, set);
-				removedCount = 0;
-                Jotunn.Logger.LogDebug($"[NetworkBuilder] Cleaned {removedCount} stale conduit refs from container {zdo.m_uid}");
+                Jotunn.Logger.LogInfo($"[NetworkBuilder] Cleaned {removedCount} stale conduit refs from container {zdo.m_uid}");
             }
 
             return set;
@@ -325,7 +324,12 @@ namespace ItemConduit.Core
             foreach (var z in conduits)
                 pkg.Write(z);
             zdo.Set(ZDOFields.IC_ConnectedConduits, pkg.GetArray());
-            Jotunn.Logger.LogDebug($"[NetworkBuilder] SetContainerConduitList {zdo.m_uid}: wrote {conduits.Count} conduits");
+
+            // Force ZDO to be marked for save by incrementing data revision
+            // This ensures the change is persisted even if Set() doesn't trigger it
+            zdo.IncreaseDataRevision();
+
+            Jotunn.Logger.LogDebug($"[NetworkBuilder] SetContainerConduitList {zdo.m_uid}: wrote {conduits.Count} conduits, dataRevision={zdo.DataRevision}");
         }
 
         #endregion
